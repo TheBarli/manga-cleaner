@@ -16,6 +16,7 @@ class MangaCanvas(QGraphicsView):
     brush_size_changed = Signal(int)
     mouse_moved = Signal(int, int)
     zoom_changed = Signal(int)
+    images_dropped = Signal(list)
 
     def __init__(self):
         super().__init__()
@@ -24,6 +25,8 @@ class MangaCanvas(QGraphicsView):
         
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
 
         # --- GENERATE CHECKERBOARD BACKGROUND ---
         grid_size = 10
@@ -149,7 +152,7 @@ class MangaCanvas(QGraphicsView):
     def drawBackground(self, painter, rect):
         painter.save()
         painter.resetTransform()
-        painter.fillRect(self.viewport().rect(), QColor(13, 14, 18))
+        painter.fillRect(self.viewport().rect(), QColor(38, 38, 38))
         painter.restore()
 
         # Draw the non-scaling checkerboard strictly behind the image bounds
@@ -498,6 +501,37 @@ class MangaCanvas(QGraphicsView):
             self.preview_item.setPath(QPainterPath())
             return
         super().mouseDoubleClickEvent(event)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        paths = [
+            u.toLocalFile() for u in event.mimeData().urls()
+            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
+        ]
+        if paths:
+            event.acceptProposedAction()
+            self.images_dropped.emit(paths)
+        else:
+            event.ignore()
 
     def cycle_mask_color(self):
         """Cycles through mask overlay color presets (Coral Red, Teal Cyan, Lime Green)"""

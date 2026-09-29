@@ -10,25 +10,25 @@ class Config:
     APP_NAME = "MANGA-CLEANER"
     VERSION = "3.2.0"
 
-    # Modern Studio Design Tokens
-    COLOR_BG_BASE = "#0d0e12"
-    COLOR_BG_PANEL = "#14161c"
-    COLOR_BG_SURFACE = "#1b1e26"
-    COLOR_BG_HOVER = "#252934"
-    COLOR_BORDER_SUBTLE = "#232732"
-    COLOR_BORDER_ACTIVE = "#3a4052"
-    COLOR_ACCENT = "#3b82f6"
-    COLOR_ACCENT_HOVER = "#60a5fa"
-    COLOR_ACCENT_SUBTLE = "#1e293b"
-    COLOR_TEXT = "#f1f5f9"
+    # Adobe Illustrator (Spectrum Dark) Design Tokens
+    COLOR_BG_BASE = "#262626"
+    COLOR_BG_PANEL = "#323232"
+    COLOR_BG_SURFACE = "#3d3d3d"
+    COLOR_BG_HOVER = "#4a4a4a"
+    COLOR_BORDER_SUBTLE = "#222222"
+    COLOR_BORDER_ACTIVE = "#ff9a00"
+    COLOR_ACCENT = "#ff9a00"
+    COLOR_ACCENT_HOVER = "#ffad33"
+    COLOR_ACCENT_SUBTLE = "#3f3525"
+    COLOR_TEXT = "#f5f5f5"
     COLOR_TEXT_PRIMARY = COLOR_TEXT
-    COLOR_TEXT_MUTED = "#94a3b8"
-    COLOR_TEXT_DIM = "#64748b"
+    COLOR_TEXT_MUTED = "#b8b8b8"
+    COLOR_TEXT_DIM = "#7a7a7a"
 
-    # Semantic Status Colors
-    COLOR_SUCCESS = "#10b981"
+    # Status Colors (Restrained Palette)
+    COLOR_SUCCESS = "#22c55e"
     COLOR_READY = COLOR_SUCCESS
-    COLOR_MODIFIED = "#38bdf8"
+    COLOR_MODIFIED = "#ff9a00"
     COLOR_WAITING = "#f59e0b"
     COLOR_ERROR = "#f43f5e"
 

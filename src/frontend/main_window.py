@@ -93,11 +93,8 @@ class MainWindow(QMainWindow):
         self.hw_mon = HardwareMonitor()
         
         btn_help = QPushButton("?")
-        btn_help.setFixedSize(30, 30)
+        btn_help.setFixedSize(28, 28)
         btn_help.clicked.connect(lambda: HelpSystem.show_guide(self))
-        
-        btn_open = QPushButton("IMPORT FOLDER")
-        btn_open.clicked.connect(self.on_open_folder)
         
         self.btn_editor = QPushButton("SEND TO EDITOR ▼")
         ed_menu = QMenu(self)
@@ -124,7 +121,6 @@ class MainWindow(QMainWindow):
         nav_lay.addWidget(self.hw_mon)
         nav_lay.addSpacing(10)
         nav_lay.addWidget(btn_help)
-        nav_lay.addWidget(btn_open)
         nav_lay.addWidget(self.btn_editor)
         nav_lay.addWidget(self.btn_export)
         main_lay.addWidget(self.nav)
@@ -275,6 +271,49 @@ class MainWindow(QMainWindow):
         # Connect canvas signals to status bar telemetry
         self.canvas.mouse_moved.connect(lambda x, y: self.status_coord_lbl.setText(f"X: {x}  Y: {y}"))
         self.canvas.zoom_changed.connect(lambda z: self.status_zoom_btn.setText(f"{z}%"))
+        self.canvas.images_dropped.connect(self.handle_dropped_images)
+
+        # Standard Studio Menu Bar
+        self.setup_menu_bar()
+
+    def setup_menu_bar(self):
+        menu_bar = self.menuBar()
+
+        # File Menu
+        file_menu = menu_bar.addMenu("&File")
+        file_menu.addAction("Open Image...", self.on_open_image, QKeySequence("Ctrl+O"))
+        file_menu.addAction("Import Folder...", self.on_open_folder, QKeySequence("Ctrl+Shift+O"))
+        file_menu.addSeparator()
+        file_menu.addAction("Quick Save", self.on_quick_save, QKeySequence("Ctrl+S"))
+        file_menu.addAction("Export PNG...", lambda: self.on_export("png"), QKeySequence("Ctrl+Shift+S"))
+        file_menu.addAction("Export JPG...", lambda: self.on_export("jpg"))
+        file_menu.addSeparator()
+        file_menu.addAction("Exit", self.close, QKeySequence("Ctrl+Q"))
+
+        # Edit Menu
+        edit_menu = menu_bar.addMenu("&Edit")
+        edit_menu.addAction("Undo", self.on_undo, QKeySequence("Ctrl+Z"))
+        edit_menu.addAction("Redo", self.on_redo, QKeySequence("Ctrl+Shift+Z"))
+        edit_menu.addSeparator()
+        edit_menu.addAction("Deselect / Clear Mask", self.canvas.clear_mask, QKeySequence("Ctrl+D"))
+        edit_menu.addAction("Invert Mask", self.canvas.invert_mask, QKeySequence("Ctrl+Shift+I"))
+        edit_menu.addAction("Expand Mask (+3px)", lambda: self.canvas.dilate_mask(3), QKeySequence("Shift+>"))
+        edit_menu.addAction("Contract Mask (-3px)", lambda: self.canvas.erode_mask(3), QKeySequence("Shift+<"))
+
+        # View Menu
+        view_menu = menu_bar.addMenu("&View")
+        view_menu.addAction("Fit to Screen", self.canvas.fit_to_screen, QKeySequence("Ctrl+0"))
+        view_menu.addAction("Actual Size (100%)", self.canvas.reset_zoom, QKeySequence("Ctrl+1"))
+        view_menu.addAction("Zoom In (+25%)", lambda: self.canvas.zoom_by(1.25), QKeySequence("Ctrl++"))
+        view_menu.addAction("Zoom Out (-20%)", lambda: self.canvas.zoom_by(0.8), QKeySequence("Ctrl+-"))
+        view_menu.addSeparator()
+        view_menu.addAction("Flip View Horizontal", self.canvas.toggle_flip_horizontal, QKeySequence("H"))
+        view_menu.addAction("Toggle Quick Mask", self.canvas.toggle_quick_mask, QKeySequence("Q"))
+        view_menu.addAction("Cycle Mask Color", self.canvas.cycle_mask_color, QKeySequence("Ctrl+M"))
+
+        # Help Menu
+        help_menu = menu_bar.addMenu("&Help")
+        help_menu.addAction("Documentation & Shortcuts", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.set_tool("BRUSH"))
@@ -328,9 +367,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(lambda: self.navigate_file(1))
         QShortcut(QKeySequence("Alt+Left"), self).activated.connect(lambda: self.navigate_file(-1))
 
-        # Quick Save & Export
+        # Quick Save, Open & Export
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.on_quick_save)
         QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(lambda: self.on_export("png"))
+        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self.on_open_image)
+        QShortcut(QKeySequence("Ctrl+Shift+O"), self).activated.connect(self.on_open_folder)
 
     def adjust_brush_size(self, delta):
         new_size = max(1, min(300, self.canvas.brush_size + delta))
@@ -825,10 +866,42 @@ class MainWindow(QMainWindow):
     #        FILE OPERATIONS          #
     #/////////////////////////////////#
 
+    def on_open_image(self):
+        p, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if p:
+            self.load_single_file(p)
+
     def on_open_folder(self):
         p = QFileDialog.getExistingDirectory(self, "Select Folder")
         if p:
             self.load_folder(p)
+
+    def load_single_file(self, path: str):
+        if not os.path.isfile(path):
+            return
+
+        # Synchronous check if already in file list
+        found_idx = -1
+        for i in range(self.file_list.count()):
+            if self.file_list.item(i).data(Qt.UserRole) == path:
+                found_idx = i
+                break
+
+        if found_idx >= 0:
+            self.file_list.setCurrentRow(found_idx)
+            item = self.file_list.item(found_idx)
+            if item:
+                self.on_file_clicked(item)
+        else:
+            self.page_states[path] = PageState.UNMODIFIED
+            self.file_list.add_file(path)
+            new_idx = self.file_list.count() - 1
+            self.file_list.setCurrentRow(new_idx)
+            item = self.file_list.item(new_idx)
+            if item:
+                self.on_file_clicked(item)
+
+        self.canvas.fit_to_screen()
 
     def load_folder(self, folder_path: str):
         if not os.path.isdir(folder_path):
@@ -837,9 +910,6 @@ class MainWindow(QMainWindow):
         files = [os.path.join(folder_path, f) for f in sorted(os.listdir(folder_path)) if f.lower().endswith(valid_exts)]
         if files:
             self.load_files(files)
-            self.show_toast(f"Loaded {len(files)} pages", "info")
-        else:
-            self.show_toast("No supported images found in folder", "warning")
 
     def load_files(self, file_paths: list):
         self.image_sessions.clear()
@@ -853,6 +923,26 @@ class MainWindow(QMainWindow):
             item = self.file_list.item(0)
             if item:
                 self.on_file_clicked(item)
+
+    def handle_dropped_images(self, paths: list):
+        if not paths:
+            return
+        if len(paths) == 1:
+            self.load_single_file(paths[0])
+        else:
+            first_idx = self.file_list.count()
+            for p in paths:
+                exists = any(self.file_list.item(i).data(Qt.UserRole) == p for i in range(self.file_list.count()))
+                if not exists:
+                    self.page_states[p] = PageState.UNMODIFIED
+                    self.file_list.add_file(p)
+            if self.file_list.count() > 0:
+                target_idx = first_idx if first_idx < self.file_list.count() else 0
+                self.file_list.setCurrentRow(target_idx)
+                item = self.file_list.item(target_idx)
+                if item:
+                    self.on_file_clicked(item)
+                    self.canvas.fit_to_screen()
 
     def navigate_file(self, direction: int):
         total = self.file_list.count()
@@ -870,45 +960,34 @@ class MainWindow(QMainWindow):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
 
     def dragMoveEvent(self, event):
         if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
 
     def dropEvent(self, event):
         if not event.mimeData().hasUrls():
+            event.ignore()
             return
-        urls = event.mimeData().urls()
-        paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
-        if not paths:
-            return
-
         valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
-        files_to_load = []
-
-        if len(paths) == 1 and os.path.isdir(paths[0]):
-            self.load_folder(paths[0])
+        paths = [
+            u.toLocalFile() for u in event.mimeData().urls()
+            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
+        ]
+        if paths:
             event.acceptProposedAction()
-            return
-
-        for p in paths:
-            if os.path.isdir(p):
-                for root, _, files in os.walk(p):
-                    for f in sorted(files):
-                        if f.lower().endswith(valid_exts):
-                            files_to_load.append(os.path.join(root, f))
-            elif p.lower().endswith(valid_exts):
-                files_to_load.append(p)
-
-        if files_to_load:
-            self.load_files(files_to_load)
-            self.show_toast(f"Loaded {len(files_to_load)} dragged files", "info")
-            event.acceptProposedAction()
+            self.handle_dropped_images(paths)
+        else:
+            event.ignore()
 
     def show_toast(self, message: str, level: str = "info", duration: int = 3000):
         if hasattr(self, 'toast'):
