@@ -236,10 +236,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("T"), self).activated.connect(self.on_transparency_scan)
         QShortcut(QKeySequence("C"), self).activated.connect(self.on_lama_clean)
         
-        QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo_image)
-        QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo_image)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.on_undo_mask)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.on_redo_mask)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.on_undo)
+        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.on_redo)
+        QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(self.on_redo)
+        QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo)
+        QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo)
 
     def keyPressEvent(self, event):
         # Trigger inverse tool temporarily if Alt is held down
@@ -342,39 +343,46 @@ class MainWindow(QMainWindow):
     #      HISTORY OPERATIONS         #
     #/////////////////////////////////#
 
-    def on_undo_image(self):
+    def on_undo(self):
         if self.canvas.is_locked: return
-        res = self.history.pop_image_undo(self.canvas.cv_img)
-        if res:
-            x, y, p = res
-            self.mark_current_modified()
-            self.canvas.cv_img[y:y+p.shape[0], x:x+p.shape[1]] = p
-            self.canvas.set_image(self.canvas.cv_img)
+        res = self.history.undo(self.canvas.cv_img, self.canvas.mask)
+        if not res: return
+
+        self.mark_current_modified()
+        if res.get("type") == "mask":
+            self.canvas.mask = res["mask"].copy()
+            self.canvas.update_mask_display()
+        elif res.get("type") == "image":
+            self.canvas.set_image(res["img"])
+            if res.get("restore_mask") is not None:
+                self.canvas.mask = res["restore_mask"].copy()
+                self.canvas.update_mask_display()
+
+    def on_redo(self):
+        if self.canvas.is_locked: return
+        res = self.history.redo(self.canvas.cv_img, self.canvas.mask)
+        if not res: return
+
+        self.mark_current_modified()
+        if res.get("type") == "mask":
+            self.canvas.mask = res["mask"].copy()
+            self.canvas.update_mask_display()
+        elif res.get("type") == "image":
+            self.canvas.set_image(res["img"])
+            if res.get("clear_mask"):
+                self.canvas.clear_mask()
+
+    def on_undo_image(self):
+        self.on_undo()
 
     def on_redo_image(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_image_redo(self.canvas.cv_img)
-        if res:
-            x, y, p = res
-            self.mark_current_modified()
-            self.canvas.cv_img[y:y+p.shape[0], x:x+p.shape[1]] = p
-            self.canvas.set_image(self.canvas.cv_img)
+        self.on_redo()
 
     def on_undo_mask(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_mask_undo(self.canvas.mask)
-        if res:
-            self.mark_current_modified()
-            self.canvas.mask = res
-            self.canvas.update_mask_display()
+        self.on_undo()
 
     def on_redo_mask(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_mask_redo(self.canvas.mask)
-        if res:
-            self.mark_current_modified()
-            self.canvas.mask = res
-            self.canvas.update_mask_display()
+        self.on_redo()
 
     #/////////////////////////////////#
     #      AI EXECUTION PIPELINE      #
@@ -511,8 +519,9 @@ class MainWindow(QMainWindow):
         if task == "clean":
             self.completed_lama_tasks += 1
             target_history = self.history if is_active else self.image_sessions[source_path]["history"]
+            saved_mask = self.canvas.mask.copy() if is_active else self.image_sessions[source_path]["mask"].copy()
             if len(patches) > 0:
-                for x, y, p in patches: target_history.push_image_action(x, y, p)
+                target_history.push_image_clean(patches, result, saved_mask=saved_mask)
 
             if is_active:
                 self.canvas.set_image(result)
@@ -522,9 +531,13 @@ class MainWindow(QMainWindow):
                 self.image_sessions[source_path]["mask"].fill(Qt.transparent)
 
         elif task in ["ocr", "transparency"]:
+            target_history = self.history if is_active else self.image_sessions[source_path]["history"]
+            current_mask = self.canvas.mask if is_active else self.image_sessions[source_path]["mask"]
+            target_history.push_mask_state(current_mask)
+
             h, w = result.shape[:2]
             rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [255, 0, 0, 255]
+            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [244, 63, 94, 255]
             new_mask = QImage(rgba.data, w, h, w*4, QImage.Format_ARGB32).copy()
 
             if is_active:
