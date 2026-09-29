@@ -239,3 +239,16 @@ QCheckBox::indicator:checked, QListView::indicator:checked {
     background-color: #3b82f6;
     border: 1px solid #3b82f6;
 }
+
+/* Status Bar */
+QStatusBar {
+    background-color: #14161c;
+    color: #94a3b8;
+    border-top: 1px solid #232732;
+    font-size: 11px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+

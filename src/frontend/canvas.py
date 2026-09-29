@@ -14,6 +14,8 @@ from src.utils.paths import Paths
 class MangaCanvas(QGraphicsView):
     mask_changed = Signal()
     brush_size_changed = Signal(int)
+    mouse_moved = Signal(int, int)
+    zoom_changed = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -183,17 +185,20 @@ class MangaCanvas(QGraphicsView):
         if self.cv_img is not None:
             self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
             curr_pct = int(abs(self.transform().m11()) * 100)
+            self.zoom_changed.emit(curr_pct)
             self.show_hud(f"Fit View ({curr_pct}%)")
 
     def reset_zoom(self):
         self.resetTransform()
         if getattr(self, 'is_flipped_h', False):
             self.scale(-1, 1)
+        self.zoom_changed.emit(100)
         self.show_hud("Actual Size (100%)")
 
     def zoom_by(self, factor):
         self.scale(factor, factor)
         curr_pct = int(abs(self.transform().m11()) * 100)
+        self.zoom_changed.emit(curr_pct)
         self.show_hud(f"Zoom: {curr_pct}%")
 
     def toggle_flip_horizontal(self):
@@ -312,6 +317,7 @@ class MangaCanvas(QGraphicsView):
             zoom = 1.25 if delta > 0 else 0.8
             self.scale(zoom, zoom)
             curr_pct = int(abs(self.transform().m11()) * 100)
+            self.zoom_changed.emit(curr_pct)
             self.show_hud(f"Zoom: {curr_pct}%")
             event.accept()
         elif modifiers & Qt.ShiftModifier:
@@ -414,6 +420,7 @@ class MangaCanvas(QGraphicsView):
 
         curr_pt = self.mapToScene(event.pos())
         self.cursor_item.setPos(curr_pt)
+        self.mouse_moved.emit(int(curr_pt.x()), int(curr_pt.y()))
         
         # Always update Polygonal preview line connecting to the cursor dynamically
         if self.current_tool == "POLY" and self.poly_points:

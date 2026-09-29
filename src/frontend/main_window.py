@@ -4,16 +4,18 @@ import numpy as np
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter, QFileDialog,
                              QMenu, QMessageBox, QGraphicsView, QProgressBar, QInputDialog,
-                             QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox)
+                             QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox,
+                             QStatusBar)
 from PySide6.QtGui import QShortcut, QKeySequence, QImage, QPainterPath
 from PySide6.QtCore import Qt, QTimer, QThread
 from enum import Enum, auto
-from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor
+from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
 from src.frontend.canvas import MangaCanvas
 from src.frontend.help_system import HelpSystem
 from src.utils.system_info import SystemMonitor
 from src.utils.history import HistoryManager
 from src.utils.config import Config
+from src.utils.paths import Paths
 from src.utils.logger import logger
 from src.backend.photoshop import PhotoshopBridge
 from src.backend.photopea import PhotopeaBridge
@@ -223,6 +225,57 @@ class MainWindow(QMainWindow):
         split.setSizes([220, 1000, 240])
         main_lay.addWidget(split, 1)
 
+        # Enable OS File Drag & Drop
+        self.setAcceptDrops(True)
+
+        # Toast Notification Overlay
+        self.toast = ToastNotification(self)
+
+        #/////////////////////////////////#
+        #          STATUS BAR             #
+        #/////////////////////////////////#
+        self.status_bar = self.statusBar()
+        self.status_bar.setFixedHeight(26)
+
+        self.status_tool_lbl = QLabel("Tool: Move")
+        self.status_tool_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_coord_lbl = QLabel("X: -  Y: -")
+        self.status_coord_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_dim_lbl = QLabel("")
+        self.status_dim_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_zoom_btn = QPushButton("100%")
+        self.status_zoom_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {Config.COLOR_TEXT_MUTED};
+                padding: 0 8px;
+                font-size: 11px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                color: {Config.COLOR_TEXT_PRIMARY};
+            }}
+        """)
+        zoom_menu = QMenu(self)
+        zoom_menu.addAction("Fit to Screen (Ctrl+0)").triggered.connect(self.canvas.fit_to_screen)
+        zoom_menu.addAction("100% Actual Size (Ctrl+1)").triggered.connect(self.canvas.reset_zoom)
+        zoom_menu.addAction("50%").triggered.connect(lambda: (self.canvas.reset_zoom(), self.canvas.zoom_by(0.5)))
+        zoom_menu.addAction("200%").triggered.connect(lambda: (self.canvas.reset_zoom(), self.canvas.zoom_by(2.0)))
+        self.status_zoom_btn.setMenu(zoom_menu)
+
+        self.status_bar.addWidget(self.status_tool_lbl)
+        self.status_bar.addPermanentWidget(self.status_coord_lbl)
+        self.status_bar.addPermanentWidget(self.status_dim_lbl)
+        self.status_bar.addPermanentWidget(self.status_zoom_btn)
+
+        # Connect canvas signals to status bar telemetry
+        self.canvas.mouse_moved.connect(lambda x, y: self.status_coord_lbl.setText(f"X: {x}  Y: {y}"))
+        self.canvas.zoom_changed.connect(lambda z: self.status_zoom_btn.setText(f"{z}%"))
+
     def setup_shortcuts(self):
         QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.set_tool("BRUSH"))
         QShortcut(QKeySequence("E"), self).activated.connect(lambda: self.set_tool("ERASER"))
@@ -266,6 +319,18 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Esc"), self).activated.connect(self.canvas.clear_mask)
         QShortcut(QKeySequence("Q"), self).activated.connect(self.canvas.toggle_quick_mask)
         QShortcut(QKeySequence("Ctrl+M"), self).activated.connect(self.canvas.cycle_mask_color)
+
+        # Rapid Page Navigation
+        QShortcut(QKeySequence("Page_Down"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Page_Up"), self).activated.connect(lambda: self.navigate_file(-1))
+        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self.navigate_file(-1))
+        QShortcut(QKeySequence("Alt+Right"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Alt+Left"), self).activated.connect(lambda: self.navigate_file(-1))
+
+        # Quick Save & Export
+        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.on_quick_save)
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(lambda: self.on_export("png"))
 
     def adjust_brush_size(self, delta):
         new_size = max(1, min(300, self.canvas.brush_size + delta))
@@ -369,6 +434,18 @@ class MainWindow(QMainWindow):
             else:
                 self.mode_lbl.setText("MODE: PAINTING")
                 self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
+
+        tool_names = {
+            "NONE": "Move",
+            "BRUSH": "Brush",
+            "ERASER": "Eraser",
+            "RECT": "Rectangle",
+            "LASSO": "Lasso",
+            "POLY": "Polygonal",
+            "BUCKET": "Bucket Fill"
+        }
+        if hasattr(self, 'status_tool_lbl'):
+            self.status_tool_lbl.setText(f"Tool: {tool_names.get(tool, tool.capitalize())}")
 
     def toggle_all_files(self, checked):
         """Checks or unchecks all files in the list"""
@@ -626,7 +703,7 @@ class MainWindow(QMainWindow):
                 if is_last: self.finalize_batch()
                 else: self.step_batch()
             else:
-                QMessageBox.information(self, "Nothing Selected", "No mask area detected!")
+                self.show_toast("No mask area detected", "warning")
             return
 
         self.total_lama_tasks += 1
@@ -740,9 +817,9 @@ class MainWindow(QMainWindow):
         self.setCursor(Qt.ArrowCursor)
             
         if self.batch_engine.export_format == "none":
-            QMessageBox.information(self, "Batch Complete", "All selected pages processed and updated in the studio memory.")
+            self.show_toast("Batch Complete: Pages updated in studio memory", "success", 4000)
         else:
-            QMessageBox.information(self, "Batch Complete", f"Saved to: {self.batch_engine.output_dir}")
+            self.show_toast(f"Batch Complete: Saved to {os.path.basename(self.batch_engine.output_dir)}", "success", 4000)
 
     #/////////////////////////////////#
     #        FILE OPERATIONS          #
@@ -751,14 +828,130 @@ class MainWindow(QMainWindow):
     def on_open_folder(self):
         p = QFileDialog.getExistingDirectory(self, "Select Folder")
         if p:
-            self.image_sessions.clear()
-            self.page_states.clear()
-            self.file_list.clear()
-            for f in sorted(os.listdir(p)):
-                if f.lower().endswith(('.jpg','.jpeg','.png','.webp')):
-                    full_path = os.path.join(p, f)
-                    self.page_states[full_path] = PageState.UNMODIFIED
-                    self.file_list.add_file(full_path)
+            self.load_folder(p)
+
+    def load_folder(self, folder_path: str):
+        if not os.path.isdir(folder_path):
+            return
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        files = [os.path.join(folder_path, f) for f in sorted(os.listdir(folder_path)) if f.lower().endswith(valid_exts)]
+        if files:
+            self.load_files(files)
+            self.show_toast(f"Loaded {len(files)} pages", "info")
+        else:
+            self.show_toast("No supported images found in folder", "warning")
+
+    def load_files(self, file_paths: list):
+        self.image_sessions.clear()
+        self.page_states.clear()
+        self.file_list.clear()
+        for full_path in file_paths:
+            self.page_states[full_path] = PageState.UNMODIFIED
+            self.file_list.add_file(full_path)
+        if self.file_list.count() > 0:
+            self.file_list.setCurrentRow(0)
+            item = self.file_list.item(0)
+            if item:
+                self.on_file_clicked(item)
+
+    def navigate_file(self, direction: int):
+        total = self.file_list.count()
+        if total == 0:
+            return
+        curr = self.file_list.currentRow()
+        if curr < 0:
+            next_idx = 0 if direction > 0 else total - 1
+        else:
+            next_idx = (curr + direction) % total
+        self.file_list.setCurrentRow(next_idx)
+        item = self.file_list.item(next_idx)
+        if item:
+            self.on_file_clicked(item)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            return
+        urls = event.mimeData().urls()
+        paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
+        if not paths:
+            return
+
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        files_to_load = []
+
+        if len(paths) == 1 and os.path.isdir(paths[0]):
+            self.load_folder(paths[0])
+            event.acceptProposedAction()
+            return
+
+        for p in paths:
+            if os.path.isdir(p):
+                for root, _, files in os.walk(p):
+                    for f in sorted(files):
+                        if f.lower().endswith(valid_exts):
+                            files_to_load.append(os.path.join(root, f))
+            elif p.lower().endswith(valid_exts):
+                files_to_load.append(p)
+
+        if files_to_load:
+            self.load_files(files_to_load)
+            self.show_toast(f"Loaded {len(files_to_load)} dragged files", "info")
+            event.acceptProposedAction()
+
+    def show_toast(self, message: str, level: str = "info", duration: int = 3000):
+        if hasattr(self, 'toast'):
+            self.toast.show_toast(message, level, duration)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'toast') and self.toast.isVisible():
+            x = self.width() - self.toast.width() - 24
+            y = self.height() - self.toast.height() - 36
+            self.toast.move(x, y)
+
+    def on_quick_save(self):
+        if self.canvas.cv_img is None or not self.current_img_path:
+            self.show_toast("No active image to save", "warning")
+            return
+
+        os.makedirs(Paths.PROCESSED, exist_ok=True)
+        filename = os.path.basename(self.current_img_path)
+        out_path = os.path.join(Paths.PROCESSED, filename)
+
+        img = self.canvas.cv_img
+        if len(img.shape) == 3 and img.shape[2] == 4:
+            img_out = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+            ext = os.path.splitext(out_path)[1].lower()
+            if ext in [".jpg", ".jpeg"]:
+                img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
+        else:
+            img_out = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        ext = os.path.splitext(out_path)[1]
+        if not ext:
+            out_path += ".png"
+            ext = ".png"
+
+        success, buf = cv2.imencode(ext, img_out)
+        if success:
+            buf.tofile(out_path)
+            self.page_states[self.current_img_path] = PageState.READY
+            self.file_list.update_item_state(self.current_img_path, "ready")
+            self.show_toast(f"Quick-saved: {filename}", "success")
+        else:
+            self.show_toast("Failed to encode image", "error")
 
     def mark_current_modified(self):
         """Transitions the page state to MODIFIED via Enum"""
@@ -806,9 +999,15 @@ class MainWindow(QMainWindow):
                     "history": self.history
                 }
             else:
-                QMessageBox.warning(self, "Load Error", f"The file is corrupted or cannot be processed:\n{os.path.basename(path_real)}")
+                self.show_toast(f"Corrupted or invalid image: {os.path.basename(path_real)}", "error")
                 logger.error(f"Failed to decode image: {path_real}")
                 
+        # Update status bar dimensions & color mode
+        if hasattr(self, 'status_dim_lbl') and self.canvas.cv_img is not None:
+            h, w = self.canvas.cv_img.shape[:2]
+            channels = "RGBA" if (len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4) else "RGB"
+            self.status_dim_lbl.setText(f"{w} × {h} px · {channels}")
+
         self._check_lock_state()
 
     def on_export(self, fmt):
@@ -826,6 +1025,7 @@ class MainWindow(QMainWindow):
             is_success, im_buf_arr = cv2.imencode(ext, img_out)
             if is_success:
                 im_buf_arr.tofile(path)
+                self.show_toast(f"Exported: {os.path.basename(path)}", "success")
 
     def on_editor_bridge(self, target="photoshop"):
         if self.canvas.cv_img is None or not self.current_img_path: return
