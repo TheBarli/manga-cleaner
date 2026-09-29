@@ -3,7 +3,7 @@ import cv2
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
                              QGraphicsPathItem, QGraphicsEllipseItem, QLabel)
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush, QPainterPath, QIcon, QCursor
-from PySide6.QtCore import Qt, QPointF, QRectF, Signal
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QTimer
 import numpy as np
 from src.utils.paths import Paths
 
@@ -53,6 +53,13 @@ class MangaCanvas(QGraphicsView):
         self.resize_start_size = 40
         self.resize_start_cursor_pos = None
         
+        # Navigation & Viewport State
+        self.is_middle_panning = False
+        self.middle_pan_start = None
+        self.is_flipped_h = False
+        self.orig_img = None
+        self.is_comparing = False
+
         self.last_pt = QPointF()
         self.start_pt = QPointF()
         self.last_drawn_pt = None # Remembers position for Shift+Click straight lines
@@ -71,15 +78,42 @@ class MangaCanvas(QGraphicsView):
         self.lock_overlay.setAttribute(Qt.WA_TransparentForMouseEvents)  # Prevent blocking panning
         self.lock_overlay.hide()
 
+        # --- FLOATING HUD OVERLAY ---
+        self.hud_label = QLabel(self)
+        self.hud_label.setStyleSheet("""
+            background-color: rgba(20, 22, 28, 220);
+            color: #f1f5f9;
+            border: 1px solid #3a4052;
+            border-radius: 12px;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: bold;
+        """)
+        self.hud_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hud_label.hide()
+        self.hud_timer = QTimer(self)
+        self.hud_timer.setSingleShot(True)
+        self.hud_timer.timeout.connect(self.hud_label.hide)
+
         self.cv_img = None
         self.mask = None
         self.setMouseTracking(True)
         self.update_cursor_visuals()
 
+    def show_hud(self, text: str, duration: int = 800):
+        """Displays transient HUD indicator centered near bottom of canvas"""
+        self.hud_label.setText(text)
+        self.hud_label.adjustSize()
+        self.hud_label.move((self.width() - self.hud_label.width()) // 2, self.height() - self.hud_label.height() - 25)
+        self.hud_label.show()
+        self.hud_timer.start(duration)
+
     def resizeEvent(self, event):
-        """Keep the lock overlay perfectly positioned in the top right"""
+        """Keep the lock overlay and HUD positioned appropriately"""
         super().resizeEvent(event)
         self.lock_overlay.move(self.width() - self.lock_overlay.width() - 20, 20)
+        if self.hud_label.isVisible():
+            self.hud_label.move((self.width() - self.hud_label.width()) // 2, self.height() - self.hud_label.height() - 25)
 
     def set_locked(self, locked: bool):
         """Toggles the lock state and manages the visual cursor & overlay"""
@@ -124,14 +158,64 @@ class MangaCanvas(QGraphicsView):
         r = self.brush_size / 2
         self.cursor_item.setRect(-r, -r, self.brush_size, self.brush_size)
 
-    def set_brush_size(self, size):
+    def set_brush_size(self, size, show_hud=False):
+        size = max(1, min(300, size))
         if self.brush_size != size:
             self.brush_size = size
             self.update_cursor_visuals()
             self.brush_size_changed.emit(self.brush_size)
+        if show_hud:
+            self.show_hud(f"Brush: {self.brush_size}px")
 
-    def set_image(self, cv_img):
+    def fit_to_screen(self):
+        if self.cv_img is not None:
+            self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
+            curr_pct = int(abs(self.transform().m11()) * 100)
+            self.show_hud(f"Fit View ({curr_pct}%)")
+
+    def reset_zoom(self):
+        self.resetTransform()
+        if getattr(self, 'is_flipped_h', False):
+            self.scale(-1, 1)
+        self.show_hud("Actual Size (100%)")
+
+    def zoom_by(self, factor):
+        self.scale(factor, factor)
+        curr_pct = int(abs(self.transform().m11()) * 100)
+        self.show_hud(f"Zoom: {curr_pct}%")
+
+    def toggle_flip_horizontal(self):
+        self.is_flipped_h = not getattr(self, 'is_flipped_h', False)
+        self.scale(-1, 1)
+        self.show_hud("Flipped View" if self.is_flipped_h else "Normal View")
+
+    def show_comparison(self, show_orig: bool):
+        if self.orig_img is None or self.cv_img is None:
+            return
+        if getattr(self, 'is_comparing', False) == show_orig:
+            return
+        self.is_comparing = show_orig
+        target_img = self.orig_img if show_orig else self.cv_img
+        h, w = target_img.shape[:2]
+        if len(target_img.shape) == 3 and target_img.shape[2] == 4:
+            q_img = QImage(target_img.data, w, h, w * 4, QImage.Format_RGBA8888)
+        else:
+            q_img = QImage(target_img.data, w, h, w * 3, QImage.Format_RGB888)
+        self.image_item.setPixmap(QPixmap.fromImage(q_img))
+        if show_orig:
+            self.mask_item.hide()
+            self.show_hud("Original Scan (Compare)", duration=1500)
+        else:
+            self.mask_item.show()
+            self.show_hud("Restored View", duration=600)
+
+    def set_image(self, cv_img, orig_img=None):
         self.cv_img = cv_img
+        if orig_img is not None:
+            self.orig_img = orig_img.copy()
+        elif self.orig_img is None:
+            self.orig_img = cv_img.copy()
+
         self.last_drawn_pt = None # Reset straight line anchor on new image
         self.poly_points.clear()
         self.preview_item.setPath(QPainterPath())
@@ -211,10 +295,12 @@ class MangaCanvas(QGraphicsView):
         if delta == 0:
             return
 
-        if modifiers & Qt.AltModifier:
-            # Alt + Scroll = Zoom In/Out
+        if (modifiers & Qt.ControlModifier) or (modifiers & Qt.AltModifier):
+            # Ctrl + Scroll or Alt + Scroll = Zoom In/Out anchored to mouse cursor
             zoom = 1.25 if delta > 0 else 0.8
             self.scale(zoom, zoom)
+            curr_pct = int(abs(self.transform().m11()) * 100)
+            self.show_hud(f"Zoom: {curr_pct}%")
             event.accept()
         elif modifiers & Qt.ShiftModifier:
             # Shift + Scroll = Pan Left/Right
@@ -232,6 +318,14 @@ class MangaCanvas(QGraphicsView):
             self.resize_start_pos = event.pos()
             self.resize_start_size = self.brush_size
             self.resize_start_cursor_pos = QCursor.pos() # Save global mouse position to teleport back
+            event.accept()
+            return
+
+        # Middle Mouse Button Pan: standard editor hand-drag
+        if event.button() == Qt.MiddleButton:
+            self.is_middle_panning = True
+            self.middle_pan_start = event.pos()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
 
@@ -288,12 +382,21 @@ class MangaCanvas(QGraphicsView):
                     self.last_drawn_pt = curr_pt
 
     def mouseMoveEvent(self, event):
+        # Handle Middle Mouse Button Panning
+        if getattr(self, 'is_middle_panning', False):
+            delta = event.pos() - self.middle_pan_start
+            self.middle_pan_start = event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+
         # Handle dynamic brush resizing motion
         if self.is_resizing_brush:
             delta_x = event.pos().x() - self.resize_start_pos.x()
             new_size = int(self.resize_start_size + delta_x * 0.5) # Scale sensitivity factor
             new_size = max(1, min(300, new_size)) # Clamp within slider limits (1 to 300)
-            self.set_brush_size(new_size)
+            self.set_brush_size(new_size, show_hud=True)
             event.accept()
             return
 
@@ -334,6 +437,12 @@ class MangaCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and getattr(self, 'is_middle_panning', False):
+            self.is_middle_panning = False
+            self.set_locked(self.is_locked)
+            event.accept()
+            return
+
         if self.is_resizing_brush and event.button() == Qt.RightButton:
             self.is_resizing_brush = False
             if self.resize_start_cursor_pos:

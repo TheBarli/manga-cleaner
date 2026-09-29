@@ -242,6 +242,24 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo)
         QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo)
 
+        # Dynamic Brush Resize Brackets
+        QShortcut(QKeySequence("["), self).activated.connect(lambda: self.adjust_brush_size(-5))
+        QShortcut(QKeySequence("]"), self).activated.connect(lambda: self.adjust_brush_size(5))
+        QShortcut(QKeySequence("Shift+["), self).activated.connect(lambda: self.adjust_brush_size(-20))
+        QShortcut(QKeySequence("Shift+]"), self).activated.connect(lambda: self.adjust_brush_size(20))
+
+        # Viewport Navigation & Zoom Presets
+        QShortcut(QKeySequence("Ctrl+0"), self).activated.connect(self.canvas.fit_to_screen)
+        QShortcut(QKeySequence("Ctrl+1"), self).activated.connect(self.canvas.reset_zoom)
+        QShortcut(QKeySequence("Ctrl+="), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
+        QShortcut(QKeySequence("Ctrl++"), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
+        QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(lambda: self.canvas.zoom_by(0.8))
+        QShortcut(QKeySequence("H"), self).activated.connect(self.canvas.toggle_flip_horizontal)
+
+    def adjust_brush_size(self, delta):
+        new_size = max(1, min(300, self.canvas.brush_size + delta))
+        self.canvas.set_brush_size(new_size, show_hud=True)
+
     def keyPressEvent(self, event):
         # Trigger inverse tool temporarily if Alt is held down
         if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
@@ -258,10 +276,18 @@ class MainWindow(QMainWindow):
                 self.is_space_moving = True
                 self.pre_space_tool = self.canvas.current_tool
                 self.set_tool("NONE")
+
+        # Hold Backslash to Compare with Original Scan
+        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
+            self.canvas.show_comparison(True)
                 
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        # Release Backslash to return to cleaned/current view
+        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
+            self.canvas.show_comparison(False)
+
         # Snap back to opposite tool when Alt is released
         if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
             if getattr(self, 'is_alt_erasing', False):
@@ -645,6 +671,7 @@ class MainWindow(QMainWindow):
 
                     self.image_sessions[path] = {
                         "img": img.copy(),
+                        "orig": img.copy(),
                         "mask": QImage(img.shape[1], img.shape[0], QImage.Format_ARGB32),
                         "history": HistoryManager(Config.MAX_HISTORY)
                     }
@@ -736,6 +763,7 @@ class MainWindow(QMainWindow):
         if self.current_img_path and self.canvas.cv_img is not None:
             self.image_sessions[self.current_img_path] = {
                 "img": self.canvas.cv_img.copy(),
+                "orig": getattr(self.canvas, 'orig_img', self.canvas.cv_img).copy(),
                 "mask": self.canvas.mask.copy(),
                 "history": self.history
             }
@@ -745,7 +773,7 @@ class MainWindow(QMainWindow):
         if path_real in self.image_sessions:
             session = self.image_sessions[path_real]
             self.history = session["history"]
-            self.canvas.set_image(session["img"])
+            self.canvas.set_image(session["img"], orig_img=session.get("orig"))
             self.canvas.mask = session["mask"].copy()
             self.canvas.update_mask_display()
         else:
@@ -758,10 +786,11 @@ class MainWindow(QMainWindow):
                 else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
                 self.history = HistoryManager(Config.MAX_HISTORY)
-                self.canvas.set_image(img)
+                self.canvas.set_image(img, orig_img=img)
                 
                 self.image_sessions[path_real] = {
                     "img": img.copy(),
+                    "orig": img.copy(),
                     "mask": self.canvas.mask.copy(),
                     "history": self.history
                 }
