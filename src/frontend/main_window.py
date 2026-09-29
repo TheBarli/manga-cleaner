@@ -308,7 +308,7 @@ class MainWindow(QMainWindow):
             if tool in ["BRUSH", "ERASER"]:
                 if not self.canvas.is_locked:
                     self.canvas.viewport().setCursor(Qt.BlankCursor)
-                    self.cursor_item.show()
+                    self.canvas.cursor_item.show()
                 else:
                     self.canvas.viewport().unsetCursor()
             else:
