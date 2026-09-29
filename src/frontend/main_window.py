@@ -140,7 +140,7 @@ class MainWindow(QMainWindow):
         self.chk_all = QCheckBox()
         self.chk_all.toggled.connect(self.toggle_all_files)
         lbl_assets = QLabel("PROJECT ASSETS")
-        lbl_assets.setStyleSheet("color: #888888; font-weight: bold;")
+        lbl_assets.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold; font-size: 10px;")
         header_lay.addWidget(self.chk_all)
         header_lay.addWidget(lbl_assets)
         header_lay.addStretch()
@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
             self.canvas.cursor_item.hide()
             self.tools.buttons["MOVE"].setChecked(True)
             self.mode_lbl.setText("MODE: MOVING")
-            self.mode_lbl.setStyleSheet("color: #888888; font-weight: bold;")
+            self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold;")
             
         else:
             self.canvas.setDragMode(QGraphicsView.NoDrag)
@@ -324,7 +324,7 @@ class MainWindow(QMainWindow):
             
             if tool == "ERASER":
                 self.mode_lbl.setText("MODE: ERASING")
-                self.mode_lbl.setStyleSheet("color: #00d4ff; font-weight: bold;")
+                self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_MODIFIED}; font-weight: bold;")
             elif tool == "BUCKET":
                 self.mode_lbl.setText("MODE: FILLING")
                 self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
@@ -814,16 +814,16 @@ class BatchSetupDialog(QDialog):
 
         self.scan_mode = QComboBox()
         self.scan_mode.addItems(["none", "Mask", "OCR Scan", "Transparency Scan"])
-        self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 4px;")
+        self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         self.export_fmt = QComboBox()
         self.export_fmt.addItems(["none", "png", "jpg", "photoshop", "photopea"])
-        self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 4px;")
+        self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        buttons.setStyleSheet(f"QPushButton {{ background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 6px; }}")
+        buttons.setStyleSheet(f"QPushButton {{ background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 6px; }}")
 
         layout = QFormLayout(self)
         layout.addRow("Scan Mode:", self.scan_mode)

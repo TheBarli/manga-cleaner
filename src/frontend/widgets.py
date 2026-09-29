@@ -136,7 +136,7 @@ class LabeledSlider(QWidget):
         lay = QVBoxLayout(self)
         
         self.display = QLabel("")
-        self.display.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
+        self.display.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-size: 10px; font-weight: 500;")
         
         self.slider = QSlider(Qt.Horizontal)
         if is_tile:

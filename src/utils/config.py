@@ -10,13 +10,29 @@ class Config:
     APP_NAME = "MANGA-CLEANER"
     VERSION = "3.2.0"
 
-    # Deep Obsidian Theme
-    COLOR_BG = "#0b0b0e"
-    COLOR_PANEL = "#121217"
-    COLOR_ACCENT = "#00d4ff" 
-    COLOR_TEXT = "#e0e0e0"
-    COLOR_TEXT_DIM = "#808085"
-    COLOR_ERROR = "#ff4d4d"
+    # Modern Studio Design Tokens
+    COLOR_BG_BASE = "#0d0e12"
+    COLOR_BG_PANEL = "#14161c"
+    COLOR_BG_SURFACE = "#1b1e26"
+    COLOR_BG_HOVER = "#252934"
+    COLOR_BORDER_SUBTLE = "#232732"
+    COLOR_BORDER_ACTIVE = "#3a4052"
+    COLOR_ACCENT = "#3b82f6"
+    COLOR_ACCENT_HOVER = "#60a5fa"
+    COLOR_ACCENT_SUBTLE = "#1e293b"
+    COLOR_TEXT = "#f1f5f9"
+    COLOR_TEXT_MUTED = "#94a3b8"
+    COLOR_TEXT_DIM = "#64748b"
+
+    # Semantic Status Colors
+    COLOR_SUCCESS = "#10b981"
+    COLOR_MODIFIED = "#38bdf8"
+    COLOR_WAITING = "#f59e0b"
+    COLOR_ERROR = "#f43f5e"
+
+    # Backward compatibility aliases
+    COLOR_BG = COLOR_BG_BASE
+    COLOR_PANEL = COLOR_BG_PANEL
     
     DEFAULT_BRUSH_SIZE = 40
     MAX_HISTORY = 20

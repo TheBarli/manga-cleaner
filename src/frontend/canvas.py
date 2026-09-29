@@ -59,7 +59,7 @@ class MangaCanvas(QGraphicsView):
         self.lasso_path = QPainterPath()
         self.poly_points = []
         self.preview_item = QGraphicsPathItem()
-        self.preview_item.setPen(QPen(QColor(255, 0, 0, 200), 2, Qt.DashLine)) # Default to Red (Adding)
+        self.preview_item.setPen(QPen(QColor(244, 63, 94, 200), 2, Qt.DashLine)) # Modern coral red
         self.scene.addItem(self.preview_item)
 
         # --- BIG CORNER LOCK OVERLAY ---
@@ -102,7 +102,7 @@ class MangaCanvas(QGraphicsView):
     def drawBackground(self, painter, rect):
         painter.save()
         painter.resetTransform()
-        painter.fillRect(self.viewport().rect(), QColor(11, 11, 14))
+        painter.fillRect(self.viewport().rect(), QColor(13, 14, 18))
         painter.restore()
 
         # Draw the non-scaling checkerboard strictly behind the image bounds
@@ -115,11 +115,11 @@ class MangaCanvas(QGraphicsView):
 
     def update_cursor_visuals(self):
         if self.current_tool == "ERASER":
-            self.cursor_item.setPen(QPen(QColor(0, 212, 255, 200), 1))
-            self.cursor_item.setBrush(QBrush(QColor(0, 212, 255, 60)))
+            self.cursor_item.setPen(QPen(QColor(56, 189, 248, 220), 1))
+            self.cursor_item.setBrush(QBrush(QColor(56, 189, 248, 50)))
         else:
-            self.cursor_item.setPen(QPen(QColor(255, 0, 0, 200), 1))
-            self.cursor_item.setBrush(QBrush(QColor(255, 0, 0, 60)))
+            self.cursor_item.setPen(QPen(QColor(244, 63, 94, 220), 1))
+            self.cursor_item.setBrush(QBrush(QColor(244, 63, 94, 50)))
         
         r = self.brush_size / 2
         self.cursor_item.setRect(-r, -r, self.brush_size, self.brush_size)
@@ -303,7 +303,7 @@ class MangaCanvas(QGraphicsView):
         # Always update Polygonal preview line connecting to the cursor dynamically
         if self.current_tool == "POLY" and self.poly_points:
             is_erasing = bool(event.modifiers() & Qt.AltModifier)
-            p_color = QColor(0, 212, 255, 200) if is_erasing else QColor(255, 0, 0, 200)
+            p_color = QColor(56, 189, 248, 200) if is_erasing else QColor(244, 63, 94, 200)
             self.preview_item.setPen(QPen(p_color, 2, Qt.DashLine))
 
             path = QPainterPath()
@@ -321,7 +321,7 @@ class MangaCanvas(QGraphicsView):
             elif self.current_tool in ["RECT", "LASSO"]:
                 # Dynamically change preview color if Alt is held down!
                 is_erasing = bool(event.modifiers() & Qt.AltModifier)
-                p_color = QColor(0, 212, 255, 200) if is_erasing else QColor(255, 0, 0, 200)
+                p_color = QColor(56, 189, 248, 200) if is_erasing else QColor(244, 63, 94, 200)
                 self.preview_item.setPen(QPen(p_color, 2, Qt.DashLine))
 
                 if self.current_tool == "RECT":
