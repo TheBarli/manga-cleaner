@@ -59,6 +59,17 @@ class MangaCanvas(QGraphicsView):
         self.is_flipped_h = False
         self.orig_img = None
         self.is_comparing = False
+        self.is_mask_hidden = False
+
+        # Multi-Color Mask System
+        self.mask_colors = [
+            QColor(244, 63, 94, 255),  # Coral Red
+            QColor(6, 182, 212, 255),  # Teal Cyan
+            QColor(132, 204, 22, 255)  # Lime Green
+        ]
+        self.mask_color_names = ["Coral Red", "Teal Cyan", "Lime Green"]
+        self.mask_color_idx = 0
+        self.current_mask_color = self.mask_colors[0]
 
         self.last_pt = QPointF()
         self.start_pt = QPointF()
@@ -152,8 +163,9 @@ class MangaCanvas(QGraphicsView):
             self.cursor_item.setPen(QPen(QColor(56, 189, 248, 220), 1))
             self.cursor_item.setBrush(QBrush(QColor(56, 189, 248, 50)))
         else:
-            self.cursor_item.setPen(QPen(QColor(244, 63, 94, 220), 1))
-            self.cursor_item.setBrush(QBrush(QColor(244, 63, 94, 50)))
+            c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+            self.cursor_item.setPen(QPen(QColor(c.red(), c.green(), c.blue(), 220), 1))
+            self.cursor_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
         
         r = self.brush_size / 2
         self.cursor_item.setRect(-r, -r, self.brush_size, self.brush_size)
@@ -480,6 +492,108 @@ class MangaCanvas(QGraphicsView):
             return
         super().mouseDoubleClickEvent(event)
 
+    def cycle_mask_color(self):
+        """Cycles through mask overlay color presets (Coral Red, Teal Cyan, Lime Green)"""
+        self.mask_color_idx = (self.mask_color_idx + 1) % len(self.mask_colors)
+        self.current_mask_color = self.mask_colors[self.mask_color_idx]
+        name = self.mask_color_names[self.mask_color_idx]
+        self.update_cursor_visuals()
+
+        # If active mask exists, recolor existing mask pixels
+        if self.mask is not None:
+            h, w = self.mask.height(), self.mask.width()
+            ptr = self.mask.bits()
+            mask_np = np.frombuffer(ptr, np.uint8).reshape((h, w, 4)).copy()
+            alpha = mask_np[:, :, 3]
+            active_idx = alpha > 0
+            if np.any(active_idx):
+                mask_np[active_idx, 0] = self.current_mask_color.blue()
+                mask_np[active_idx, 1] = self.current_mask_color.green()
+                mask_np[active_idx, 2] = self.current_mask_color.red()
+                self.mask = QImage(mask_np.data, w, h, w * 4, QImage.Format_ARGB32).copy()
+                self.update_mask_display()
+
+        self.show_hud(f"Mask Color: {name}")
+
+    def dilate_mask(self, px=3):
+        """Expands the mask boundary outward by px pixels using circular dilation"""
+        if self.mask is None or self.is_locked: return
+        h, w = self.mask.height(), self.mask.width()
+        ptr = self.mask.bits()
+        mask_np = np.frombuffer(ptr, np.uint8).reshape((h, w, 4)).copy()
+        alpha = mask_np[:, :, 3].copy()
+        if not np.any(alpha): return
+
+        self.mask_changed.emit()
+        k_size = px * 2 + 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+        dilated = cv2.dilate(alpha, kernel)
+
+        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        mask_np[:, :, 0] = c.blue()
+        mask_np[:, :, 1] = c.green()
+        mask_np[:, :, 2] = c.red()
+        mask_np[:, :, 3] = dilated
+
+        self.mask = QImage(mask_np.data, w, h, w * 4, QImage.Format_ARGB32).copy()
+        self.update_mask_display()
+        self.show_hud(f"Grow Mask (+{px}px)")
+
+    def erode_mask(self, px=3):
+        """Contracts the mask boundary inward by px pixels using circular erosion"""
+        if self.mask is None or self.is_locked: return
+        h, w = self.mask.height(), self.mask.width()
+        ptr = self.mask.bits()
+        mask_np = np.frombuffer(ptr, np.uint8).reshape((h, w, 4)).copy()
+        alpha = mask_np[:, :, 3].copy()
+        if not np.any(alpha): return
+
+        self.mask_changed.emit()
+        k_size = px * 2 + 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+        eroded = cv2.erode(alpha, kernel)
+
+        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        mask_np[:, :, 0] = c.blue()
+        mask_np[:, :, 1] = c.green()
+        mask_np[:, :, 2] = c.red()
+        mask_np[:, :, 3] = eroded
+
+        self.mask = QImage(mask_np.data, w, h, w * 4, QImage.Format_ARGB32).copy()
+        self.update_mask_display()
+        self.show_hud(f"Shrink Mask (-{px}px)")
+
+    def invert_mask(self):
+        """Inverts the current mask alpha values"""
+        if self.mask is None or self.is_locked: return
+        h, w = self.mask.height(), self.mask.width()
+        ptr = self.mask.bits()
+        mask_np = np.frombuffer(ptr, np.uint8).reshape((h, w, 4)).copy()
+        alpha = mask_np[:, :, 3].copy()
+
+        self.mask_changed.emit()
+        inverted = 255 - alpha
+
+        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        mask_np[:, :, 0] = c.blue()
+        mask_np[:, :, 1] = c.green()
+        mask_np[:, :, 2] = c.red()
+        mask_np[:, :, 3] = inverted
+
+        self.mask = QImage(mask_np.data, w, h, w * 4, QImage.Format_ARGB32).copy()
+        self.update_mask_display()
+        self.show_hud("Invert Mask")
+
+    def toggle_quick_mask(self):
+        """Temporarily toggles mask visibility without deleting selection"""
+        self.is_mask_hidden = not getattr(self, 'is_mask_hidden', False)
+        if self.is_mask_hidden:
+            self.mask_item.hide()
+            self.show_hud("Mask Hidden [Q]")
+        else:
+            self.mask_item.show()
+            self.show_hud("Mask Visible [Q]")
+
     def get_painter(self, force_erase=False):
         painter = QPainter(self.mask)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -489,7 +603,7 @@ class MangaCanvas(QGraphicsView):
             color = Qt.transparent
         else:
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            color = QColor(255, 0, 0, 255)
+            color = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
             
         return painter, color
 

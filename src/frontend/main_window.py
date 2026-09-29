@@ -256,6 +256,17 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(lambda: self.canvas.zoom_by(0.8))
         QShortcut(QKeySequence("H"), self).activated.connect(self.canvas.toggle_flip_horizontal)
 
+        # Mask Refinement & Selection Operations
+        QShortcut(QKeySequence("Shift+>"), self).activated.connect(lambda: self.canvas.dilate_mask(3))
+        QShortcut(QKeySequence("Shift+."), self).activated.connect(lambda: self.canvas.dilate_mask(3))
+        QShortcut(QKeySequence("Shift+<"), self).activated.connect(lambda: self.canvas.erode_mask(3))
+        QShortcut(QKeySequence("Shift+,"), self).activated.connect(lambda: self.canvas.erode_mask(3))
+        QShortcut(QKeySequence("Ctrl+Shift+I"), self).activated.connect(self.canvas.invert_mask)
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self.canvas.clear_mask)
+        QShortcut(QKeySequence("Esc"), self).activated.connect(self.canvas.clear_mask)
+        QShortcut(QKeySequence("Q"), self).activated.connect(self.canvas.toggle_quick_mask)
+        QShortcut(QKeySequence("Ctrl+M"), self).activated.connect(self.canvas.cycle_mask_color)
+
     def adjust_brush_size(self, delta):
         new_size = max(1, min(300, self.canvas.brush_size + delta))
         self.canvas.set_brush_size(new_size, show_hud=True)
