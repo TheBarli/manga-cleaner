@@ -114,14 +114,16 @@ class HardwareMonitor(QFrame):
     def __init__(self):
         super().__init__()
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 0, 10, 0)
+        lay.setContentsMargins(6, 0, 6, 0)
+        lay.setSpacing(6)
         
         self.lbl = QLabel("SYSTEM IDLE")
-        self.lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold; font-size: 10px;")
+        self.lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: 500; font-size: 10px;")
         
         self.bar = QSlider(Qt.Horizontal)
         self.bar.setRange(0, 100)
-        self.bar.setFixedWidth(100)
+        self.bar.setFixedWidth(50)
+        self.bar.setFixedHeight(12)
         self.bar.setEnabled(False)
         
         lay.addWidget(self.lbl)

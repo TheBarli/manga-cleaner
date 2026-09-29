@@ -79,51 +79,8 @@ class MainWindow(QMainWindow):
         main_lay.setContentsMargins(0, 0, 0, 0)
         main_lay.setSpacing(0)
 
-        #/////////////////////////////////#
-        #           NAVIGATION            #
-        #/////////////////////////////////#
-        self.nav = QFrame()
-        self.nav.setObjectName("NavBar")
-        self.nav.setFixedHeight(60)
-        nav_lay = QHBoxLayout(self.nav)
-        
-        title = QLabel(f"{Config.APP_NAME.upper()} {Config.VERSION}")
-        title.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold; font-size: 18px;")
-        
+        # Hardware Monitor telemetry widget (hosted in bottom status bar)
         self.hw_mon = HardwareMonitor()
-        
-        btn_help = QPushButton("?")
-        btn_help.setFixedSize(28, 28)
-        btn_help.clicked.connect(lambda: HelpSystem.show_guide(self))
-        
-        self.btn_editor = QPushButton("SEND TO EDITOR ▼")
-        ed_menu = QMenu(self)
-        
-        # Disable Photoshop Button Safely on Linux
-        ps_action = ed_menu.addAction("Adobe Photoshop")
-        ps_action.triggered.connect(lambda: self.on_editor_bridge("photoshop"))
-        if os.name != 'nt':
-            ps_action.setEnabled(False)
-            ps_action.setText("Adobe Photoshop")
-            
-        ed_menu.addAction("Photopea (Web)").triggered.connect(lambda: self.on_editor_bridge("photopea"))
-        self.btn_editor.setMenu(ed_menu)
-        
-        self.btn_export = QPushButton("EXPORT ▼")
-        self.btn_export.setObjectName("PrimaryBtn")
-        exp_menu = QMenu(self)
-        exp_menu.addAction("Export as JPG").triggered.connect(lambda: self.on_export("jpg"))
-        exp_menu.addAction("Export as PNG").triggered.connect(lambda: self.on_export("png"))
-        self.btn_export.setMenu(exp_menu)
-
-        nav_lay.addWidget(title)
-        nav_lay.addStretch()
-        nav_lay.addWidget(self.hw_mon)
-        nav_lay.addSpacing(10)
-        nav_lay.addWidget(btn_help)
-        nav_lay.addWidget(self.btn_editor)
-        nav_lay.addWidget(self.btn_export)
-        main_lay.addWidget(self.nav)
 
         split = QSplitter(Qt.Horizontal)
         
@@ -147,6 +104,7 @@ class MainWindow(QMainWindow):
         self.file_list.itemClicked.connect(self.on_file_clicked)
         self.btn_batch = QPushButton("RUN BATCH PROCESS")
         self.btn_batch.setObjectName("ActionBtn")
+        self.btn_batch.setToolTip("Run Batch Clean")
         self.btn_batch.clicked.connect(self.on_start_batch)
         
         lp_lay.addLayout(header_lay)
@@ -174,26 +132,48 @@ class MainWindow(QMainWindow):
         self.tools.buttons["POLY"].clicked.connect(lambda: self.set_tool("POLY"))
         self.tools.buttons["BUCKET"].clicked.connect(lambda: self.set_tool("BUCKET"))
         self.tools.buttons["CLEAR"].clicked.connect(self.canvas.clear_mask)
+
+        # Minimalist Single-Line Tooltips (Pro Standard)
+        self.tools.buttons["MOVE"].setToolTip("Move / Pan Canvas (M / Space)")
+        self.tools.buttons["BRUSH"].setToolTip("Brush Tool (B)")
+        self.tools.buttons["ERASER"].setToolTip("Eraser Tool (E)")
+        self.tools.buttons["RECT"].setToolTip("Rectangle Selection (R)")
+        self.tools.buttons["LASSO"].setToolTip("Lasso Selection (L)")
+        self.tools.buttons["POLY"].setToolTip("Polygonal Selection (P)")
+        self.tools.buttons["BUCKET"].setToolTip("Bucket Fill (G)")
+        self.tools.buttons["CLEAR"].setToolTip("Clear Mask (Ctrl+D / Esc)")
         
         self.b_slider = LabeledSlider("BRUSH SIZE", 40, 1, 300, self.canvas.set_brush_size)
+        self.b_slider.setToolTip("Brush Size (1-300px) [ / ]")
         self.o_slider = LabeledSlider("MASK OPACITY", 60, 0, 100, self.canvas.set_mask_opacity, suffix="%")
+        self.o_slider.setToolTip("Mask Opacity (10-100%)")
         self.t_slider = LabeledSlider("MAX TILE SIZE", 2048, 512, 4096, is_tile=True)
+        self.t_slider.setToolTip("Max Tile Size (512-4096px)")
         
         # Link dynamic canvas size updates to the sidebar slider UI
         self.canvas.brush_size_changed.connect(self.b_slider.slider.setValue)
         
         btn_scan = QPushButton("OCR SCAN [O]")
         btn_scan.setObjectName("ActionBtn")
+        btn_scan.setToolTip("Auto-Detect Text (O)")
         btn_scan.clicked.connect(self.on_ocr_scan)
 
         btn_trans = QPushButton("TRANSPARENCY SCAN [T]")
         btn_trans.setObjectName("ActionBtn")
+        btn_trans.setToolTip("Auto-Detect Transparency (T)")
         btn_trans.clicked.connect(self.on_transparency_scan)
         
         self.btn_clean = QPushButton("EXECUTE CLEAN [C]")
         self.btn_clean.setObjectName("PrimaryBtn")
         self.btn_clean.setFixedHeight(45)
+        self.btn_clean.setToolTip("Execute Clean (C)")
         self.btn_clean.clicked.connect(self.on_lama_clean)
+
+        self.btn_export = QPushButton("EXPORT")
+        self.btn_export.setObjectName("ActionBtn")
+        self.btn_export.setFixedHeight(34)
+        self.btn_export.setToolTip("Export Image (Ctrl+Shift+S)")
+        self.btn_export.clicked.connect(self.on_export)
         
         self.queue_lbl = QLabel("Processing / Queued: 0")
         self.queue_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
@@ -206,11 +186,12 @@ class MainWindow(QMainWindow):
         rp_lay.addWidget(self.tools)
         rp_lay.addWidget(self.b_slider)
         rp_lay.addWidget(self.o_slider)
-        rp_lay.addSpacing(20)
+        rp_lay.addSpacing(16)
         rp_lay.addWidget(btn_scan)
         rp_lay.addWidget(btn_trans)
         rp_lay.addWidget(self.t_slider)
         rp_lay.addWidget(self.btn_clean)
+        rp_lay.addWidget(self.btn_export)
         rp_lay.addWidget(self.queue_lbl)
         rp_lay.addStretch()
         rp_lay.addWidget(self.progress_bar)
@@ -267,6 +248,7 @@ class MainWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.status_coord_lbl)
         self.status_bar.addPermanentWidget(self.status_dim_lbl)
         self.status_bar.addPermanentWidget(self.status_zoom_btn)
+        self.status_bar.addPermanentWidget(self.hw_mon)
 
         # Connect canvas signals to status bar telemetry
         self.canvas.mouse_moved.connect(lambda x, y: self.status_coord_lbl.setText(f"X: {x}  Y: {y}"))
@@ -285,8 +267,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction("Import Folder...", self.on_open_folder, QKeySequence("Ctrl+Shift+O"))
         file_menu.addSeparator()
         file_menu.addAction("Quick Save", self.on_quick_save, QKeySequence("Ctrl+S"))
-        file_menu.addAction("Export PNG...", lambda: self.on_export("png"), QKeySequence("Ctrl+Shift+S"))
-        file_menu.addAction("Export JPG...", lambda: self.on_export("jpg"))
+        file_menu.addAction("Export Image...", self.on_export, QKeySequence("Ctrl+Shift+S"))
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close, QKeySequence("Ctrl+Q"))
 
@@ -369,7 +350,7 @@ class MainWindow(QMainWindow):
 
         # Quick Save, Open & Export
         QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.on_quick_save)
-        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(lambda: self.on_export("png"))
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.on_export)
         QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self.on_open_image)
         QShortcut(QKeySequence("Ctrl+Shift+O"), self).activated.connect(self.on_open_folder)
 
@@ -1089,19 +1070,25 @@ class MainWindow(QMainWindow):
 
         self._check_lock_state()
 
-    def on_export(self, fmt):
+    def on_export(self, fmt=None):
         if self.canvas.cv_img is None: return
-        path, _ = QFileDialog.getSaveFileName(self, "Export", "", f"{fmt.upper()} (*.{fmt})")
+        path, sel_filter = QFileDialog.getSaveFileName(
+            self, "Export Image", "", "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
+        )
         if path:
+            ext = os.path.splitext(path)[1].lower().lstrip(".")
+            if not ext:
+                ext = "png" if "PNG" in sel_filter else "jpg"
+                path = f"{path}.{ext}"
+            chosen_fmt = ext
             if len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4:
                 img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGBA2BGRA)
-                if fmt.lower() in ["jpg", "jpeg"]:
+                if chosen_fmt in ["jpg", "jpeg"]:
                     img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
             else:
                 img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGB2BGR)
                 
-            ext = os.path.splitext(path)[1]
-            is_success, im_buf_arr = cv2.imencode(ext, img_out)
+            is_success, im_buf_arr = cv2.imencode(f".{chosen_fmt}", img_out)
             if is_success:
                 im_buf_arr.tofile(path)
                 self.show_toast(f"Exported: {os.path.basename(path)}", "success")

@@ -68,11 +68,12 @@ class MangaCanvas(QGraphicsView):
 
         # Multi-Color Mask System
         self.mask_colors = [
-            QColor(244, 63, 94, 255),  # Coral Red
+            QColor(200, 110, 0, 255),  # Studio Amber
             QColor(6, 182, 212, 255),  # Teal Cyan
-            QColor(132, 204, 22, 255)  # Lime Green
+            QColor(132, 204, 22, 255), # Lime Green
+            QColor(244, 63, 94, 255)   # Coral Red
         ]
-        self.mask_color_names = ["Coral Red", "Teal Cyan", "Lime Green"]
+        self.mask_color_names = ["Studio Amber", "Teal Cyan", "Lime Green", "Coral Red"]
         self.mask_color_idx = 0
         self.current_mask_color = self.mask_colors[0]
 
@@ -82,7 +83,7 @@ class MangaCanvas(QGraphicsView):
         self.lasso_path = QPainterPath()
         self.poly_points = []
         self.preview_item = QGraphicsPathItem()
-        self.preview_item.setPen(QPen(QColor(244, 63, 94, 200), 2, Qt.DashLine)) # Modern coral red
+        self.preview_item.setPen(QPen(QColor(200, 110, 0, 200), 2, Qt.DashLine)) # Studio amber
         self.scene.addItem(self.preview_item)
 
         # --- BIG CORNER LOCK OVERLAY ---
@@ -168,7 +169,7 @@ class MangaCanvas(QGraphicsView):
             self.cursor_item.setPen(QPen(QColor(56, 189, 248, 220), 1))
             self.cursor_item.setBrush(QBrush(QColor(56, 189, 248, 50)))
         else:
-            c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+            c = getattr(self, 'current_mask_color', QColor(200, 110, 0, 255))
             self.cursor_item.setPen(QPen(QColor(c.red(), c.green(), c.blue(), 220), 1))
             self.cursor_item.setBrush(QBrush(QColor(c.red(), c.green(), c.blue(), 50)))
         
@@ -428,7 +429,7 @@ class MangaCanvas(QGraphicsView):
         # Always update Polygonal preview line connecting to the cursor dynamically
         if self.current_tool == "POLY" and self.poly_points:
             is_erasing = bool(event.modifiers() & Qt.AltModifier)
-            p_color = QColor(56, 189, 248, 200) if is_erasing else QColor(244, 63, 94, 200)
+            p_color = QColor(56, 189, 248, 200) if is_erasing else getattr(self, 'current_mask_color', QColor(200, 110, 0, 200))
             self.preview_item.setPen(QPen(p_color, 2, Qt.DashLine))
 
             path = QPainterPath()
@@ -446,7 +447,7 @@ class MangaCanvas(QGraphicsView):
             elif self.current_tool in ["RECT", "LASSO"]:
                 # Dynamically change preview color if Alt is held down!
                 is_erasing = bool(event.modifiers() & Qt.AltModifier)
-                p_color = QColor(56, 189, 248, 200) if is_erasing else QColor(244, 63, 94, 200)
+                p_color = QColor(56, 189, 248, 200) if is_erasing else getattr(self, 'current_mask_color', QColor(200, 110, 0, 200))
                 self.preview_item.setPen(QPen(p_color, 2, Qt.DashLine))
 
                 if self.current_tool == "RECT":
@@ -570,7 +571,7 @@ class MangaCanvas(QGraphicsView):
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         dilated = cv2.dilate(alpha, kernel)
 
-        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        c = getattr(self, 'current_mask_color', QColor(200, 110, 0, 255))
         mask_np[:, :, 0] = c.blue()
         mask_np[:, :, 1] = c.green()
         mask_np[:, :, 2] = c.red()
@@ -594,7 +595,7 @@ class MangaCanvas(QGraphicsView):
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
         eroded = cv2.erode(alpha, kernel)
 
-        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        c = getattr(self, 'current_mask_color', QColor(200, 110, 0, 255))
         mask_np[:, :, 0] = c.blue()
         mask_np[:, :, 1] = c.green()
         mask_np[:, :, 2] = c.red()
@@ -615,7 +616,7 @@ class MangaCanvas(QGraphicsView):
         self.mask_changed.emit()
         inverted = 255 - alpha
 
-        c = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+        c = getattr(self, 'current_mask_color', QColor(200, 110, 0, 255))
         mask_np[:, :, 0] = c.blue()
         mask_np[:, :, 1] = c.green()
         mask_np[:, :, 2] = c.red()
@@ -644,7 +645,7 @@ class MangaCanvas(QGraphicsView):
             color = Qt.transparent
         else:
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            color = getattr(self, 'current_mask_color', QColor(244, 63, 94, 255))
+            color = getattr(self, 'current_mask_color', QColor(200, 110, 0, 255))
             
         return painter, color
 
