@@ -21,11 +21,13 @@ class Config:
     COLOR_ACCENT_HOVER = "#60a5fa"
     COLOR_ACCENT_SUBTLE = "#1e293b"
     COLOR_TEXT = "#f1f5f9"
+    COLOR_TEXT_PRIMARY = COLOR_TEXT
     COLOR_TEXT_MUTED = "#94a3b8"
     COLOR_TEXT_DIM = "#64748b"
 
     # Semantic Status Colors
     COLOR_SUCCESS = "#10b981"
+    COLOR_READY = COLOR_SUCCESS
     COLOR_MODIFIED = "#38bdf8"
     COLOR_WAITING = "#f59e0b"
     COLOR_ERROR = "#f43f5e"
