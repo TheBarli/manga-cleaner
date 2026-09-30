@@ -1,5 +1,4 @@
 import os
-import PySide6.QtSvg 
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QWidget, QVBoxLayout, 
                              QPushButton, QLabel, QFrame, QSlider, QHBoxLayout,
                              QStyledItemDelegate, QGridLayout)

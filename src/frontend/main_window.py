@@ -3,9 +3,8 @@ import cv2
 import numpy as np
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter, QFileDialog,
-                             QMenu, QMessageBox, QGraphicsView, QProgressBar, QInputDialog,
-                             QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox,
-                             QStatusBar)
+                             QMenu, QMessageBox, QGraphicsView, QProgressBar,
+                             QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox)
 from PySide6.QtGui import QShortcut, QKeySequence, QImage, QPainterPath
 from PySide6.QtCore import Qt, QTimer, QThread
 from enum import Enum, auto
@@ -17,10 +16,8 @@ from src.utils.history import HistoryManager
 from src.utils.config import Config
 from src.utils.paths import Paths
 from src.utils.logger import logger
-from src.backend.photoshop import PhotoshopBridge
-from src.backend.photopea import PhotopeaBridge
 from src.backend.batch_engine import BatchEngine
-from src.backend.workers import AIWorker, get_pool, _run_flush_process
+from src.backend.workers import AIWorker
 
 #/////////////////////////////////#
 #         PAGE STATE ENUM         #
@@ -830,13 +827,6 @@ class MainWindow(QMainWindow):
     def finalize_batch(self):
         self.is_batching = False
         self._check_lock_state()
-        
-        self.setCursor(Qt.WaitCursor)
-        if self.batch_engine.export_format == "photoshop":
-            PhotoshopBridge.open_batch_in_ps(self.batch_engine.files, self.batch_engine.output_dir)
-        elif self.batch_engine.export_format == "photopea":
-            PhotopeaBridge.open_batch_in_photopea(self.batch_engine.files, self.batch_engine.output_dir)
-        self.setCursor(Qt.ArrowCursor)
             
         if self.batch_engine.export_format == "none":
             self.show_toast("Batch Complete: Pages updated in studio memory", "success", 4000)
@@ -1093,29 +1083,6 @@ class MainWindow(QMainWindow):
                 im_buf_arr.tofile(path)
                 self.show_toast(f"Exported: {os.path.basename(path)}", "success")
 
-    def on_editor_bridge(self, target="photoshop"):
-        if self.canvas.cv_img is None or not self.current_img_path: return
-
-        img_data = np.fromfile(self.current_img_path, dtype=np.uint8)
-        orig = cv2.imdecode(img_data, cv2.IMREAD_UNCHANGED)
-
-        if orig is not None:
-            if len(orig.shape) == 3 and orig.shape[2] == 4:
-                orig = cv2.cvtColor(orig, cv2.COLOR_BGRA2RGBA)
-            else:
-                orig = cv2.cvtColor(orig, cv2.COLOR_BGR2RGB)
-
-            self.setCursor(Qt.WaitCursor)
-            if target == "photoshop":
-                res = PhotoshopBridge.send_to_ps(orig, self.canvas.cv_img)
-            elif target == "photopea":
-                res = PhotopeaBridge.send_to_photopea(orig, self.canvas.cv_img, self.current_img_path)
-            self.setCursor(Qt.ArrowCursor)
-
-            if res != "Success":
-                logger.error(f"[X] UI Blocked Editor Bridge Transfer: {res}")
-                QMessageBox.warning(self, "Editor Error", f"Could not send to {target.capitalize()}:\n{res}\n\nCheck your logs folder for details.")
-
     def update_telemetry(self):
         ram, gpu = self.monitor.get_stats()
         self.hw_mon.lbl.setText(f"{'GPU' if gpu else 'CPU'} | RAM: {ram}MB")
@@ -1136,7 +1103,7 @@ class BatchSetupDialog(QDialog):
         self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         self.export_fmt = QComboBox()
-        self.export_fmt.addItems(["none", "png", "jpg", "photoshop", "photopea"])
+        self.export_fmt.addItems(["none", "png", "jpg"])
         self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
