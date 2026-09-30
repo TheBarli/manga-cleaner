@@ -1,9 +1,8 @@
 import os
-import PySide6.QtSvg 
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QWidget, QVBoxLayout, 
                              QPushButton, QLabel, QFrame, QSlider, QHBoxLayout,
                              QStyledItemDelegate, QGridLayout)
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import Qt, QRect, QTimer
 from PySide6.QtGui import QIcon
 from src.utils.config import Config
 from src.utils.paths import Paths
@@ -114,14 +113,16 @@ class HardwareMonitor(QFrame):
     def __init__(self):
         super().__init__()
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 0, 10, 0)
+        lay.setContentsMargins(6, 0, 6, 0)
+        lay.setSpacing(6)
         
         self.lbl = QLabel("SYSTEM IDLE")
-        self.lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold; font-size: 10px;")
+        self.lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: 500; font-size: 10px;")
         
         self.bar = QSlider(Qt.Horizontal)
         self.bar.setRange(0, 100)
-        self.bar.setFixedWidth(100)
+        self.bar.setFixedWidth(50)
+        self.bar.setFixedHeight(12)
         self.bar.setEnabled(False)
         
         lay.addWidget(self.lbl)
@@ -136,7 +137,7 @@ class LabeledSlider(QWidget):
         lay = QVBoxLayout(self)
         
         self.display = QLabel("")
-        self.display.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
+        self.display.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-size: 10px; font-weight: 500;")
         
         self.slider = QSlider(Qt.Horizontal)
         if is_tile:
@@ -158,3 +159,51 @@ class LabeledSlider(QWidget):
             self.display.setText(f"{self.base_label}: {val * 512}px")
         else:
             self.display.setText(f"{self.base_label}: {val}{self.suffix}")
+
+
+class ToastNotification(QFrame):
+    """Floating non-blocking toast notification banner for operation feedback"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.hide()
+        
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 8, 14, 8)
+        self.label = QLabel("")
+        self.label.setStyleSheet("color: #f1f5f9; font-size: 12px; font-weight: 500;")
+        lay.addWidget(self.label)
+        
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.hide)
+
+    def show_toast(self, message: str, level: str = "info", duration: int = 3000):
+        self.label.setText(message)
+        border_color = {
+            "info": Config.COLOR_BORDER_ACTIVE,
+            "success": Config.COLOR_READY,
+            "warning": Config.COLOR_WAITING,
+            "error": Config.COLOR_ERROR
+        }.get(level, Config.COLOR_BORDER_ACTIVE)
+        
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(20, 22, 28, 240);
+                border: 1px solid {border_color};
+                border-radius: 8px;
+            }}
+        """)
+        self.adjustSize()
+        parent = self.parentWidget()
+        if parent:
+            margin_right = 24
+            margin_bottom = 36
+            x = parent.width() - self.width() - margin_right
+            y = parent.height() - self.height() - margin_bottom
+            self.move(x, y)
+        self.show()
+        self.raise_()
+        self.timer.start(duration)
+

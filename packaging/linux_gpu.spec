@@ -1,8 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+import os
 from PyInstaller.utils.hooks import collect_all
 
-# NVIDIA CUDA 13 packages used by ONNX Runtime 1.29
+ROOT_DIR = os.path.abspath(os.path.join(SPECPATH, '..'))
+
+# NVIDIA CUDA packages
 nvidia_packages = [
     'nvidia.cublas',
     'nvidia.cuda_nvrtc',
@@ -26,25 +28,20 @@ for package in nvidia_packages:
     except Exception:
         pass
 
-
 a = Analysis(
-    ['main.py'],
-    pathex=[],
-
+    [os.path.join(ROOT_DIR, 'main.py')],
+    pathex=[ROOT_DIR],
     binaries=nvidia_binaries,
-
     datas=[
-        ('assets', 'assets'),
-        ('src', 'src'),
+        (os.path.join(ROOT_DIR, 'assets'), 'assets'),
+        (os.path.join(ROOT_DIR, 'src'), 'src'),
     ] + nvidia_datas,
-
     hiddenimports=[
         'onnxruntime',
         'onnxruntime.capi',
         'onnxruntime.capi.onnxruntime_pybind11_state',
         'PySide6.QtSvg',
     ] + nvidia_hiddenimports,
-
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -53,8 +50,7 @@ a = Analysis(
     optimize=0,
 )
 
-# Keep CUDA/TensorRT providers!
-# Only remove unused Qt components.
+# Only remove unused Qt components
 forbidden_keywords = [
     'libQt6OpenGL',
     'libQt6Pdf',
@@ -64,15 +60,19 @@ forbidden_keywords = [
     'translations',
 ]
 
-a.binaries = [
-    b for b in a.binaries
-    if not any(k.lower() in b[0].lower() for k in forbidden_keywords)
-]
+filtered_binaries = []
+for b in a.binaries:
+    dest_path = b[0].lower()
+    if not any(kw.lower() in dest_path for kw in forbidden_keywords):
+        filtered_binaries.append(b)
+a.binaries = filtered_binaries
 
-a.datas = [
-    d for d in a.datas
-    if not any(k.lower() in d[0].lower() for k in forbidden_keywords)
-]
+filtered_datas = []
+for d in a.datas:
+    dest_path = d[0].lower()
+    if not any(kw.lower() in dest_path for kw in forbidden_keywords):
+        filtered_datas.append(d)
+a.datas = filtered_datas
 
 pyz = PYZ(a.pure)
 
@@ -83,6 +83,7 @@ exe = EXE(
     exclude_binaries=True,
     name='MangaCleaner_GPU',
     debug=False,
+    bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,
@@ -91,6 +92,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=[os.path.join(ROOT_DIR, 'assets', 'icon.ico')],
 )
 
 coll = COLLECT(

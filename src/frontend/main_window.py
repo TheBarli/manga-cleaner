@@ -3,22 +3,21 @@ import cv2
 import numpy as np
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter, QFileDialog,
-                             QMenu, QMessageBox, QGraphicsView, QProgressBar, QInputDialog,
+                             QMenu, QMessageBox, QGraphicsView, QProgressBar,
                              QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox)
 from PySide6.QtGui import QShortcut, QKeySequence, QImage, QPainterPath
 from PySide6.QtCore import Qt, QTimer, QThread
 from enum import Enum, auto
-from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor
+from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
 from src.frontend.canvas import MangaCanvas
 from src.frontend.help_system import HelpSystem
 from src.utils.system_info import SystemMonitor
 from src.utils.history import HistoryManager
 from src.utils.config import Config
+from src.utils.paths import Paths
 from src.utils.logger import logger
-from src.backend.photoshop import PhotoshopBridge
-from src.backend.photopea import PhotopeaBridge
 from src.backend.batch_engine import BatchEngine
-from src.backend.workers import AIWorker, get_pool, _run_flush_process
+from src.backend.workers import AIWorker
 
 #/////////////////////////////////#
 #         PAGE STATE ENUM         #
@@ -77,55 +76,8 @@ class MainWindow(QMainWindow):
         main_lay.setContentsMargins(0, 0, 0, 0)
         main_lay.setSpacing(0)
 
-        #/////////////////////////////////#
-        #           NAVIGATION            #
-        #/////////////////////////////////#
-        self.nav = QFrame()
-        self.nav.setObjectName("NavBar")
-        self.nav.setFixedHeight(60)
-        nav_lay = QHBoxLayout(self.nav)
-        
-        title = QLabel(f"{Config.APP_NAME.upper()} {Config.VERSION}")
-        title.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold; font-size: 18px;")
-        
+        # Hardware Monitor telemetry widget (hosted in bottom status bar)
         self.hw_mon = HardwareMonitor()
-        
-        btn_help = QPushButton("?")
-        btn_help.setFixedSize(30, 30)
-        btn_help.clicked.connect(lambda: HelpSystem.show_guide(self))
-        
-        btn_open = QPushButton("IMPORT FOLDER")
-        btn_open.clicked.connect(self.on_open_folder)
-        
-        self.btn_editor = QPushButton("SEND TO EDITOR ▼")
-        ed_menu = QMenu(self)
-        
-        # Disable Photoshop Button Safely on Linux
-        ps_action = ed_menu.addAction("Adobe Photoshop")
-        ps_action.triggered.connect(lambda: self.on_editor_bridge("photoshop"))
-        if os.name != 'nt':
-            ps_action.setEnabled(False)
-            ps_action.setText("Adobe Photoshop")
-            
-        ed_menu.addAction("Photopea (Web)").triggered.connect(lambda: self.on_editor_bridge("photopea"))
-        self.btn_editor.setMenu(ed_menu)
-        
-        self.btn_export = QPushButton("EXPORT ▼")
-        self.btn_export.setObjectName("PrimaryBtn")
-        exp_menu = QMenu(self)
-        exp_menu.addAction("Export as JPG").triggered.connect(lambda: self.on_export("jpg"))
-        exp_menu.addAction("Export as PNG").triggered.connect(lambda: self.on_export("png"))
-        self.btn_export.setMenu(exp_menu)
-
-        nav_lay.addWidget(title)
-        nav_lay.addStretch()
-        nav_lay.addWidget(self.hw_mon)
-        nav_lay.addSpacing(10)
-        nav_lay.addWidget(btn_help)
-        nav_lay.addWidget(btn_open)
-        nav_lay.addWidget(self.btn_editor)
-        nav_lay.addWidget(self.btn_export)
-        main_lay.addWidget(self.nav)
 
         split = QSplitter(Qt.Horizontal)
         
@@ -140,7 +92,7 @@ class MainWindow(QMainWindow):
         self.chk_all = QCheckBox()
         self.chk_all.toggled.connect(self.toggle_all_files)
         lbl_assets = QLabel("PROJECT ASSETS")
-        lbl_assets.setStyleSheet("color: #888888; font-weight: bold;")
+        lbl_assets.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold; font-size: 10px;")
         header_lay.addWidget(self.chk_all)
         header_lay.addWidget(lbl_assets)
         header_lay.addStretch()
@@ -149,6 +101,7 @@ class MainWindow(QMainWindow):
         self.file_list.itemClicked.connect(self.on_file_clicked)
         self.btn_batch = QPushButton("RUN BATCH PROCESS")
         self.btn_batch.setObjectName("ActionBtn")
+        self.btn_batch.setToolTip("Run Batch Clean")
         self.btn_batch.clicked.connect(self.on_start_batch)
         
         lp_lay.addLayout(header_lay)
@@ -176,26 +129,48 @@ class MainWindow(QMainWindow):
         self.tools.buttons["POLY"].clicked.connect(lambda: self.set_tool("POLY"))
         self.tools.buttons["BUCKET"].clicked.connect(lambda: self.set_tool("BUCKET"))
         self.tools.buttons["CLEAR"].clicked.connect(self.canvas.clear_mask)
+
+        # Minimalist Single-Line Tooltips (Pro Standard)
+        self.tools.buttons["MOVE"].setToolTip("Move / Pan Canvas (M / Space)")
+        self.tools.buttons["BRUSH"].setToolTip("Brush Tool (B)")
+        self.tools.buttons["ERASER"].setToolTip("Eraser Tool (E)")
+        self.tools.buttons["RECT"].setToolTip("Rectangle Selection (R)")
+        self.tools.buttons["LASSO"].setToolTip("Lasso Selection (L)")
+        self.tools.buttons["POLY"].setToolTip("Polygonal Selection (P)")
+        self.tools.buttons["BUCKET"].setToolTip("Bucket Fill (G)")
+        self.tools.buttons["CLEAR"].setToolTip("Clear Mask (Ctrl+D / Esc)")
         
         self.b_slider = LabeledSlider("BRUSH SIZE", 40, 1, 300, self.canvas.set_brush_size)
+        self.b_slider.setToolTip("Brush Size (1-300px) [ / ]")
         self.o_slider = LabeledSlider("MASK OPACITY", 60, 0, 100, self.canvas.set_mask_opacity, suffix="%")
+        self.o_slider.setToolTip("Mask Opacity (10-100%)")
         self.t_slider = LabeledSlider("MAX TILE SIZE", 2048, 512, 4096, is_tile=True)
+        self.t_slider.setToolTip("Max Tile Size (512-4096px)")
         
         # Link dynamic canvas size updates to the sidebar slider UI
         self.canvas.brush_size_changed.connect(self.b_slider.slider.setValue)
         
         btn_scan = QPushButton("OCR SCAN [O]")
         btn_scan.setObjectName("ActionBtn")
+        btn_scan.setToolTip("Auto-Detect Text (O)")
         btn_scan.clicked.connect(self.on_ocr_scan)
 
         btn_trans = QPushButton("TRANSPARENCY SCAN [T]")
         btn_trans.setObjectName("ActionBtn")
+        btn_trans.setToolTip("Auto-Detect Transparency (T)")
         btn_trans.clicked.connect(self.on_transparency_scan)
         
         self.btn_clean = QPushButton("EXECUTE CLEAN [C]")
         self.btn_clean.setObjectName("PrimaryBtn")
         self.btn_clean.setFixedHeight(45)
+        self.btn_clean.setToolTip("Execute Clean (C)")
         self.btn_clean.clicked.connect(self.on_lama_clean)
+
+        self.btn_export = QPushButton("EXPORT")
+        self.btn_export.setObjectName("ActionBtn")
+        self.btn_export.setFixedHeight(34)
+        self.btn_export.setToolTip("Export Image (Ctrl+Shift+S)")
+        self.btn_export.clicked.connect(self.on_export)
         
         self.queue_lbl = QLabel("Processing / Queued: 0")
         self.queue_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
@@ -208,11 +183,12 @@ class MainWindow(QMainWindow):
         rp_lay.addWidget(self.tools)
         rp_lay.addWidget(self.b_slider)
         rp_lay.addWidget(self.o_slider)
-        rp_lay.addSpacing(20)
+        rp_lay.addSpacing(16)
         rp_lay.addWidget(btn_scan)
         rp_lay.addWidget(btn_trans)
         rp_lay.addWidget(self.t_slider)
         rp_lay.addWidget(self.btn_clean)
+        rp_lay.addWidget(self.btn_export)
         rp_lay.addWidget(self.queue_lbl)
         rp_lay.addStretch()
         rp_lay.addWidget(self.progress_bar)
@@ -222,6 +198,100 @@ class MainWindow(QMainWindow):
         split.addWidget(self.rp)
         split.setSizes([220, 1000, 240])
         main_lay.addWidget(split, 1)
+
+        # Enable OS File Drag & Drop
+        self.setAcceptDrops(True)
+
+        # Toast Notification Overlay
+        self.toast = ToastNotification(self)
+
+        #/////////////////////////////////#
+        #          STATUS BAR             #
+        #/////////////////////////////////#
+        self.status_bar = self.statusBar()
+        self.status_bar.setFixedHeight(26)
+
+        self.status_tool_lbl = QLabel("Tool: Move")
+        self.status_tool_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_coord_lbl = QLabel("X: -  Y: -")
+        self.status_coord_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_dim_lbl = QLabel("")
+        self.status_dim_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+
+        self.status_zoom_btn = QPushButton("100%")
+        self.status_zoom_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {Config.COLOR_TEXT_MUTED};
+                padding: 0 8px;
+                font-size: 11px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                color: {Config.COLOR_TEXT_PRIMARY};
+            }}
+        """)
+        zoom_menu = QMenu(self)
+        zoom_menu.addAction("Fit to Screen (Ctrl+0)").triggered.connect(self.canvas.fit_to_screen)
+        zoom_menu.addAction("100% Actual Size (Ctrl+1)").triggered.connect(self.canvas.reset_zoom)
+        zoom_menu.addAction("50%").triggered.connect(lambda: (self.canvas.reset_zoom(), self.canvas.zoom_by(0.5)))
+        zoom_menu.addAction("200%").triggered.connect(lambda: (self.canvas.reset_zoom(), self.canvas.zoom_by(2.0)))
+        self.status_zoom_btn.setMenu(zoom_menu)
+
+        self.status_bar.addWidget(self.status_tool_lbl)
+        self.status_bar.addPermanentWidget(self.status_coord_lbl)
+        self.status_bar.addPermanentWidget(self.status_dim_lbl)
+        self.status_bar.addPermanentWidget(self.status_zoom_btn)
+        self.status_bar.addPermanentWidget(self.hw_mon)
+
+        # Connect canvas signals to status bar telemetry
+        self.canvas.mouse_moved.connect(lambda x, y: self.status_coord_lbl.setText(f"X: {x}  Y: {y}"))
+        self.canvas.zoom_changed.connect(lambda z: self.status_zoom_btn.setText(f"{z}%"))
+        self.canvas.images_dropped.connect(self.handle_dropped_images)
+
+        # Standard Studio Menu Bar
+        self.setup_menu_bar()
+
+    def setup_menu_bar(self):
+        menu_bar = self.menuBar()
+
+        # File Menu
+        file_menu = menu_bar.addMenu("&File")
+        file_menu.addAction("Open Image...", self.on_open_image, QKeySequence("Ctrl+O"))
+        file_menu.addAction("Import Folder...", self.on_open_folder, QKeySequence("Ctrl+Shift+O"))
+        file_menu.addSeparator()
+        file_menu.addAction("Quick Save", self.on_quick_save, QKeySequence("Ctrl+S"))
+        file_menu.addAction("Export Image...", self.on_export, QKeySequence("Ctrl+Shift+S"))
+        file_menu.addSeparator()
+        file_menu.addAction("Exit", self.close, QKeySequence("Ctrl+Q"))
+
+        # Edit Menu
+        edit_menu = menu_bar.addMenu("&Edit")
+        edit_menu.addAction("Undo", self.on_undo, QKeySequence("Ctrl+Z"))
+        edit_menu.addAction("Redo", self.on_redo, QKeySequence("Ctrl+Shift+Z"))
+        edit_menu.addSeparator()
+        edit_menu.addAction("Deselect / Clear Mask", self.canvas.clear_mask, QKeySequence("Ctrl+D"))
+        edit_menu.addAction("Invert Mask", self.canvas.invert_mask, QKeySequence("Ctrl+Shift+I"))
+        edit_menu.addAction("Expand Mask (+3px)", lambda: self.canvas.dilate_mask(3), QKeySequence("Shift+>"))
+        edit_menu.addAction("Contract Mask (-3px)", lambda: self.canvas.erode_mask(3), QKeySequence("Shift+<"))
+
+        # View Menu
+        view_menu = menu_bar.addMenu("&View")
+        view_menu.addAction("Fit to Screen", self.canvas.fit_to_screen, QKeySequence("Ctrl+0"))
+        view_menu.addAction("Actual Size (100%)", self.canvas.reset_zoom, QKeySequence("Ctrl+1"))
+        view_menu.addAction("Zoom In (+25%)", lambda: self.canvas.zoom_by(1.25), QKeySequence("Ctrl++"))
+        view_menu.addAction("Zoom Out (-20%)", lambda: self.canvas.zoom_by(0.8), QKeySequence("Ctrl+-"))
+        view_menu.addSeparator()
+        view_menu.addAction("Flip View Horizontal", self.canvas.toggle_flip_horizontal, QKeySequence("H"))
+        view_menu.addAction("Toggle Quick Mask", self.canvas.toggle_quick_mask, QKeySequence("Q"))
+        view_menu.addAction("Cycle Mask Color", self.canvas.cycle_mask_color, QKeySequence("Ctrl+M"))
+
+        # Help Menu
+        help_menu = menu_bar.addMenu("&Help")
+        help_menu.addAction("Documentation & Shortcuts", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
         QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.set_tool("BRUSH"))
@@ -236,10 +306,54 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("T"), self).activated.connect(self.on_transparency_scan)
         QShortcut(QKeySequence("C"), self).activated.connect(self.on_lama_clean)
         
-        QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo_image)
-        QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo_image)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.on_undo_mask)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.on_redo_mask)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.on_undo)
+        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.on_redo)
+        QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(self.on_redo)
+        QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo)
+        QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo)
+
+        # Dynamic Brush Resize Brackets
+        QShortcut(QKeySequence("["), self).activated.connect(lambda: self.adjust_brush_size(-5))
+        QShortcut(QKeySequence("]"), self).activated.connect(lambda: self.adjust_brush_size(5))
+        QShortcut(QKeySequence("Shift+["), self).activated.connect(lambda: self.adjust_brush_size(-20))
+        QShortcut(QKeySequence("Shift+]"), self).activated.connect(lambda: self.adjust_brush_size(20))
+
+        # Viewport Navigation & Zoom Presets
+        QShortcut(QKeySequence("Ctrl+0"), self).activated.connect(self.canvas.fit_to_screen)
+        QShortcut(QKeySequence("Ctrl+1"), self).activated.connect(self.canvas.reset_zoom)
+        QShortcut(QKeySequence("Ctrl+="), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
+        QShortcut(QKeySequence("Ctrl++"), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
+        QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(lambda: self.canvas.zoom_by(0.8))
+        QShortcut(QKeySequence("H"), self).activated.connect(self.canvas.toggle_flip_horizontal)
+
+        # Mask Refinement & Selection Operations
+        QShortcut(QKeySequence("Shift+>"), self).activated.connect(lambda: self.canvas.dilate_mask(3))
+        QShortcut(QKeySequence("Shift+."), self).activated.connect(lambda: self.canvas.dilate_mask(3))
+        QShortcut(QKeySequence("Shift+<"), self).activated.connect(lambda: self.canvas.erode_mask(3))
+        QShortcut(QKeySequence("Shift+,"), self).activated.connect(lambda: self.canvas.erode_mask(3))
+        QShortcut(QKeySequence("Ctrl+Shift+I"), self).activated.connect(self.canvas.invert_mask)
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self.canvas.clear_mask)
+        QShortcut(QKeySequence("Esc"), self).activated.connect(self.canvas.clear_mask)
+        QShortcut(QKeySequence("Q"), self).activated.connect(self.canvas.toggle_quick_mask)
+        QShortcut(QKeySequence("Ctrl+M"), self).activated.connect(self.canvas.cycle_mask_color)
+
+        # Rapid Page Navigation
+        QShortcut(QKeySequence("Page_Down"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Page_Up"), self).activated.connect(lambda: self.navigate_file(-1))
+        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self.navigate_file(-1))
+        QShortcut(QKeySequence("Alt+Right"), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence("Alt+Left"), self).activated.connect(lambda: self.navigate_file(-1))
+
+        # Quick Save, Open & Export
+        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.on_quick_save)
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.on_export)
+        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self.on_open_image)
+        QShortcut(QKeySequence("Ctrl+Shift+O"), self).activated.connect(self.on_open_folder)
+
+    def adjust_brush_size(self, delta):
+        new_size = max(1, min(300, self.canvas.brush_size + delta))
+        self.canvas.set_brush_size(new_size, show_hud=True)
 
     def keyPressEvent(self, event):
         # Trigger inverse tool temporarily if Alt is held down
@@ -257,10 +371,18 @@ class MainWindow(QMainWindow):
                 self.is_space_moving = True
                 self.pre_space_tool = self.canvas.current_tool
                 self.set_tool("NONE")
+
+        # Hold Backslash to Compare with Original Scan
+        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
+            self.canvas.show_comparison(True)
                 
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
+        # Release Backslash to return to cleaned/current view
+        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
+            self.canvas.show_comparison(False)
+
         # Snap back to opposite tool when Alt is released
         if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
             if getattr(self, 'is_alt_erasing', False):
@@ -300,7 +422,7 @@ class MainWindow(QMainWindow):
             self.canvas.cursor_item.hide()
             self.tools.buttons["MOVE"].setChecked(True)
             self.mode_lbl.setText("MODE: MOVING")
-            self.mode_lbl.setStyleSheet("color: #888888; font-weight: bold;")
+            self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold;")
             
         else:
             self.canvas.setDragMode(QGraphicsView.NoDrag)
@@ -324,13 +446,25 @@ class MainWindow(QMainWindow):
             
             if tool == "ERASER":
                 self.mode_lbl.setText("MODE: ERASING")
-                self.mode_lbl.setStyleSheet("color: #00d4ff; font-weight: bold;")
+                self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_MODIFIED}; font-weight: bold;")
             elif tool == "BUCKET":
                 self.mode_lbl.setText("MODE: FILLING")
                 self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
             else:
                 self.mode_lbl.setText("MODE: PAINTING")
                 self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
+
+        tool_names = {
+            "NONE": "Move",
+            "BRUSH": "Brush",
+            "ERASER": "Eraser",
+            "RECT": "Rectangle",
+            "LASSO": "Lasso",
+            "POLY": "Polygonal",
+            "BUCKET": "Bucket Fill"
+        }
+        if hasattr(self, 'status_tool_lbl'):
+            self.status_tool_lbl.setText(f"Tool: {tool_names.get(tool, tool.capitalize())}")
 
     def toggle_all_files(self, checked):
         """Checks or unchecks all files in the list"""
@@ -342,39 +476,46 @@ class MainWindow(QMainWindow):
     #      HISTORY OPERATIONS         #
     #/////////////////////////////////#
 
-    def on_undo_image(self):
+    def on_undo(self):
         if self.canvas.is_locked: return
-        res = self.history.pop_image_undo(self.canvas.cv_img)
-        if res:
-            x, y, p = res
-            self.mark_current_modified()
-            self.canvas.cv_img[y:y+p.shape[0], x:x+p.shape[1]] = p
-            self.canvas.set_image(self.canvas.cv_img)
+        res = self.history.undo(self.canvas.cv_img, self.canvas.mask)
+        if not res: return
+
+        self.mark_current_modified()
+        if res.get("type") == "mask":
+            self.canvas.mask = res["mask"].copy()
+            self.canvas.update_mask_display()
+        elif res.get("type") == "image":
+            self.canvas.set_image(res["img"])
+            if res.get("restore_mask") is not None:
+                self.canvas.mask = res["restore_mask"].copy()
+                self.canvas.update_mask_display()
+
+    def on_redo(self):
+        if self.canvas.is_locked: return
+        res = self.history.redo(self.canvas.cv_img, self.canvas.mask)
+        if not res: return
+
+        self.mark_current_modified()
+        if res.get("type") == "mask":
+            self.canvas.mask = res["mask"].copy()
+            self.canvas.update_mask_display()
+        elif res.get("type") == "image":
+            self.canvas.set_image(res["img"])
+            if res.get("clear_mask"):
+                self.canvas.clear_mask()
+
+    def on_undo_image(self):
+        self.on_undo()
 
     def on_redo_image(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_image_redo(self.canvas.cv_img)
-        if res:
-            x, y, p = res
-            self.mark_current_modified()
-            self.canvas.cv_img[y:y+p.shape[0], x:x+p.shape[1]] = p
-            self.canvas.set_image(self.canvas.cv_img)
+        self.on_redo()
 
     def on_undo_mask(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_mask_undo(self.canvas.mask)
-        if res:
-            self.mark_current_modified()
-            self.canvas.mask = res
-            self.canvas.update_mask_display()
+        self.on_undo()
 
     def on_redo_mask(self):
-        if self.canvas.is_locked: return
-        res = self.history.pop_mask_redo(self.canvas.mask)
-        if res:
-            self.mark_current_modified()
-            self.canvas.mask = res
-            self.canvas.update_mask_display()
+        self.on_redo()
 
     #/////////////////////////////////#
     #      AI EXECUTION PIPELINE      #
@@ -511,8 +652,9 @@ class MainWindow(QMainWindow):
         if task == "clean":
             self.completed_lama_tasks += 1
             target_history = self.history if is_active else self.image_sessions[source_path]["history"]
+            saved_mask = self.canvas.mask.copy() if is_active else self.image_sessions[source_path]["mask"].copy()
             if len(patches) > 0:
-                for x, y, p in patches: target_history.push_image_action(x, y, p)
+                target_history.push_image_clean(patches, result, saved_mask=saved_mask)
 
             if is_active:
                 self.canvas.set_image(result)
@@ -522,9 +664,13 @@ class MainWindow(QMainWindow):
                 self.image_sessions[source_path]["mask"].fill(Qt.transparent)
 
         elif task in ["ocr", "transparency"]:
+            target_history = self.history if is_active else self.image_sessions[source_path]["history"]
+            current_mask = self.canvas.mask if is_active else self.image_sessions[source_path]["mask"]
+            target_history.push_mask_state(current_mask)
+
             h, w = result.shape[:2]
             rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [255, 0, 0, 255]
+            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [244, 63, 94, 255]
             new_mask = QImage(rgba.data, w, h, w*4, QImage.Format_ARGB32).copy()
 
             if is_active:
@@ -576,7 +722,7 @@ class MainWindow(QMainWindow):
                 if is_last: self.finalize_batch()
                 else: self.step_batch()
             else:
-                QMessageBox.information(self, "Nothing Selected", "No mask area detected!")
+                self.show_toast("No mask area detected", "warning")
             return
 
         self.total_lama_tasks += 1
@@ -632,6 +778,7 @@ class MainWindow(QMainWindow):
 
                     self.image_sessions[path] = {
                         "img": img.copy(),
+                        "orig": img.copy(),
                         "mask": QImage(img.shape[1], img.shape[0], QImage.Format_ARGB32),
                         "history": HistoryManager(Config.MAX_HISTORY)
                     }
@@ -680,34 +827,181 @@ class MainWindow(QMainWindow):
     def finalize_batch(self):
         self.is_batching = False
         self._check_lock_state()
-        
-        self.setCursor(Qt.WaitCursor)
-        if self.batch_engine.export_format == "photoshop":
-            PhotoshopBridge.open_batch_in_ps(self.batch_engine.files, self.batch_engine.output_dir)
-        elif self.batch_engine.export_format == "photopea":
-            PhotopeaBridge.open_batch_in_photopea(self.batch_engine.files, self.batch_engine.output_dir)
-        self.setCursor(Qt.ArrowCursor)
             
         if self.batch_engine.export_format == "none":
-            QMessageBox.information(self, "Batch Complete", "All selected pages processed and updated in the studio memory.")
+            self.show_toast("Batch Complete: Pages updated in studio memory", "success", 4000)
         else:
-            QMessageBox.information(self, "Batch Complete", f"Saved to: {self.batch_engine.output_dir}")
+            self.show_toast(f"Batch Complete: Saved to {os.path.basename(self.batch_engine.output_dir)}", "success", 4000)
 
     #/////////////////////////////////#
     #        FILE OPERATIONS          #
     #/////////////////////////////////#
 
+    def on_open_image(self):
+        p, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if p:
+            self.load_single_file(p)
+
     def on_open_folder(self):
         p = QFileDialog.getExistingDirectory(self, "Select Folder")
         if p:
-            self.image_sessions.clear()
-            self.page_states.clear()
-            self.file_list.clear()
-            for f in sorted(os.listdir(p)):
-                if f.lower().endswith(('.jpg','.jpeg','.png','.webp')):
-                    full_path = os.path.join(p, f)
-                    self.page_states[full_path] = PageState.UNMODIFIED
-                    self.file_list.add_file(full_path)
+            self.load_folder(p)
+
+    def load_single_file(self, path: str):
+        if not os.path.isfile(path):
+            return
+
+        # Synchronous check if already in file list
+        found_idx = -1
+        for i in range(self.file_list.count()):
+            if self.file_list.item(i).data(Qt.UserRole) == path:
+                found_idx = i
+                break
+
+        if found_idx >= 0:
+            self.file_list.setCurrentRow(found_idx)
+            item = self.file_list.item(found_idx)
+            if item:
+                self.on_file_clicked(item)
+        else:
+            self.page_states[path] = PageState.UNMODIFIED
+            self.file_list.add_file(path)
+            new_idx = self.file_list.count() - 1
+            self.file_list.setCurrentRow(new_idx)
+            item = self.file_list.item(new_idx)
+            if item:
+                self.on_file_clicked(item)
+
+        self.canvas.fit_to_screen()
+
+    def load_folder(self, folder_path: str):
+        if not os.path.isdir(folder_path):
+            return
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        files = [os.path.join(folder_path, f) for f in sorted(os.listdir(folder_path)) if f.lower().endswith(valid_exts)]
+        if files:
+            self.load_files(files)
+
+    def load_files(self, file_paths: list):
+        self.image_sessions.clear()
+        self.page_states.clear()
+        self.file_list.clear()
+        for full_path in file_paths:
+            self.page_states[full_path] = PageState.UNMODIFIED
+            self.file_list.add_file(full_path)
+        if self.file_list.count() > 0:
+            self.file_list.setCurrentRow(0)
+            item = self.file_list.item(0)
+            if item:
+                self.on_file_clicked(item)
+
+    def handle_dropped_images(self, paths: list):
+        if not paths:
+            return
+        if len(paths) == 1:
+            self.load_single_file(paths[0])
+        else:
+            first_idx = self.file_list.count()
+            for p in paths:
+                exists = any(self.file_list.item(i).data(Qt.UserRole) == p for i in range(self.file_list.count()))
+                if not exists:
+                    self.page_states[p] = PageState.UNMODIFIED
+                    self.file_list.add_file(p)
+            if self.file_list.count() > 0:
+                target_idx = first_idx if first_idx < self.file_list.count() else 0
+                self.file_list.setCurrentRow(target_idx)
+                item = self.file_list.item(target_idx)
+                if item:
+                    self.on_file_clicked(item)
+                    self.canvas.fit_to_screen()
+
+    def navigate_file(self, direction: int):
+        total = self.file_list.count()
+        if total == 0:
+            return
+        curr = self.file_list.currentRow()
+        if curr < 0:
+            next_idx = 0 if direction > 0 else total - 1
+        else:
+            next_idx = (curr + direction) % total
+        self.file_list.setCurrentRow(next_idx)
+        item = self.file_list.item(next_idx)
+        if item:
+            self.on_file_clicked(item)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        paths = [
+            u.toLocalFile() for u in event.mimeData().urls()
+            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
+        ]
+        if paths:
+            event.acceptProposedAction()
+            self.handle_dropped_images(paths)
+        else:
+            event.ignore()
+
+    def show_toast(self, message: str, level: str = "info", duration: int = 3000):
+        if hasattr(self, 'toast'):
+            self.toast.show_toast(message, level, duration)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'toast') and self.toast.isVisible():
+            x = self.width() - self.toast.width() - 24
+            y = self.height() - self.toast.height() - 36
+            self.toast.move(x, y)
+
+    def on_quick_save(self):
+        if self.canvas.cv_img is None or not self.current_img_path:
+            self.show_toast("No active image to save", "warning")
+            return
+
+        os.makedirs(Paths.PROCESSED, exist_ok=True)
+        filename = os.path.basename(self.current_img_path)
+        out_path = os.path.join(Paths.PROCESSED, filename)
+
+        img = self.canvas.cv_img
+        if len(img.shape) == 3 and img.shape[2] == 4:
+            img_out = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
+            ext = os.path.splitext(out_path)[1].lower()
+            if ext in [".jpg", ".jpeg"]:
+                img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
+        else:
+            img_out = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        ext = os.path.splitext(out_path)[1]
+        if not ext:
+            out_path += ".png"
+            ext = ".png"
+
+        success, buf = cv2.imencode(ext, img_out)
+        if success:
+            buf.tofile(out_path)
+            self.page_states[self.current_img_path] = PageState.READY
+            self.file_list.update_item_state(self.current_img_path, "ready")
+            self.show_toast(f"Quick-saved: {filename}", "success")
+        else:
+            self.show_toast("Failed to encode image", "error")
 
     def mark_current_modified(self):
         """Transitions the page state to MODIFIED via Enum"""
@@ -723,6 +1017,7 @@ class MainWindow(QMainWindow):
         if self.current_img_path and self.canvas.cv_img is not None:
             self.image_sessions[self.current_img_path] = {
                 "img": self.canvas.cv_img.copy(),
+                "orig": getattr(self.canvas, 'orig_img', self.canvas.cv_img).copy(),
                 "mask": self.canvas.mask.copy(),
                 "history": self.history
             }
@@ -732,7 +1027,7 @@ class MainWindow(QMainWindow):
         if path_real in self.image_sessions:
             session = self.image_sessions[path_real]
             self.history = session["history"]
-            self.canvas.set_image(session["img"])
+            self.canvas.set_image(session["img"], orig_img=session.get("orig"))
             self.canvas.mask = session["mask"].copy()
             self.canvas.update_mask_display()
         else:
@@ -745,57 +1040,48 @@ class MainWindow(QMainWindow):
                 else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
                 self.history = HistoryManager(Config.MAX_HISTORY)
-                self.canvas.set_image(img)
+                self.canvas.set_image(img, orig_img=img)
                 
                 self.image_sessions[path_real] = {
                     "img": img.copy(),
+                    "orig": img.copy(),
                     "mask": self.canvas.mask.copy(),
                     "history": self.history
                 }
             else:
-                QMessageBox.warning(self, "Load Error", f"The file is corrupted or cannot be processed:\n{os.path.basename(path_real)}")
+                self.show_toast(f"Corrupted or invalid image: {os.path.basename(path_real)}", "error")
                 logger.error(f"Failed to decode image: {path_real}")
                 
+        # Update status bar dimensions & color mode
+        if hasattr(self, 'status_dim_lbl') and self.canvas.cv_img is not None:
+            h, w = self.canvas.cv_img.shape[:2]
+            channels = "RGBA" if (len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4) else "RGB"
+            self.status_dim_lbl.setText(f"{w} × {h} px · {channels}")
+
         self._check_lock_state()
 
-    def on_export(self, fmt):
+    def on_export(self, fmt=None):
         if self.canvas.cv_img is None: return
-        path, _ = QFileDialog.getSaveFileName(self, "Export", "", f"{fmt.upper()} (*.{fmt})")
+        path, sel_filter = QFileDialog.getSaveFileName(
+            self, "Export Image", "", "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
+        )
         if path:
+            ext = os.path.splitext(path)[1].lower().lstrip(".")
+            if not ext:
+                ext = "png" if "PNG" in sel_filter else "jpg"
+                path = f"{path}.{ext}"
+            chosen_fmt = ext
             if len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4:
                 img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGBA2BGRA)
-                if fmt.lower() in ["jpg", "jpeg"]:
+                if chosen_fmt in ["jpg", "jpeg"]:
                     img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
             else:
                 img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGB2BGR)
                 
-            ext = os.path.splitext(path)[1]
-            is_success, im_buf_arr = cv2.imencode(ext, img_out)
+            is_success, im_buf_arr = cv2.imencode(f".{chosen_fmt}", img_out)
             if is_success:
                 im_buf_arr.tofile(path)
-
-    def on_editor_bridge(self, target="photoshop"):
-        if self.canvas.cv_img is None or not self.current_img_path: return
-
-        img_data = np.fromfile(self.current_img_path, dtype=np.uint8)
-        orig = cv2.imdecode(img_data, cv2.IMREAD_UNCHANGED)
-
-        if orig is not None:
-            if len(orig.shape) == 3 and orig.shape[2] == 4:
-                orig = cv2.cvtColor(orig, cv2.COLOR_BGRA2RGBA)
-            else:
-                orig = cv2.cvtColor(orig, cv2.COLOR_BGR2RGB)
-
-            self.setCursor(Qt.WaitCursor)
-            if target == "photoshop":
-                res = PhotoshopBridge.send_to_ps(orig, self.canvas.cv_img)
-            elif target == "photopea":
-                res = PhotopeaBridge.send_to_photopea(orig, self.canvas.cv_img, self.current_img_path)
-            self.setCursor(Qt.ArrowCursor)
-
-            if res != "Success":
-                logger.error(f"[X] UI Blocked Editor Bridge Transfer: {res}")
-                QMessageBox.warning(self, "Editor Error", f"Could not send to {target.capitalize()}:\n{res}\n\nCheck your logs folder for details.")
+                self.show_toast(f"Exported: {os.path.basename(path)}", "success")
 
     def update_telemetry(self):
         ram, gpu = self.monitor.get_stats()
@@ -814,16 +1100,16 @@ class BatchSetupDialog(QDialog):
 
         self.scan_mode = QComboBox()
         self.scan_mode.addItems(["none", "Mask", "OCR Scan", "Transparency Scan"])
-        self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 4px;")
+        self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         self.export_fmt = QComboBox()
-        self.export_fmt.addItems(["none", "png", "jpg", "photoshop", "photopea"])
-        self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 4px;")
+        self.export_fmt.addItems(["none", "png", "jpg"])
+        self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        buttons.setStyleSheet(f"QPushButton {{ background-color: {Config.COLOR_BG}; border: 1px solid #2a2a32; padding: 6px; }}")
+        buttons.setStyleSheet(f"QPushButton {{ background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 6px; }}")
 
         layout = QFormLayout(self)
         layout.addRow("Scan Mode:", self.scan_mode)

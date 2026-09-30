@@ -4,7 +4,7 @@ import ctypes
 import multiprocessing
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QIcon
-from PySide6.QtCore import Qt, qInstallMessageHandler
+from PySide6.QtCore import qInstallMessageHandler
 from src.frontend.main_window import MainWindow
 from src.utils.logger import logger
 from src.utils.paths import Paths

@@ -10,13 +10,32 @@ class Config:
     APP_NAME = "MANGA-CLEANER"
     VERSION = "3.2.0"
 
-    # Deep Obsidian Theme
-    COLOR_BG = "#0b0b0e"
-    COLOR_PANEL = "#121217"
-    COLOR_ACCENT = "#00d4ff" 
-    COLOR_TEXT = "#e0e0e0"
-    COLOR_TEXT_DIM = "#808085"
-    COLOR_ERROR = "#ff4d4d"
+    # Adobe Illustrator (Spectrum Dark) Design Tokens
+    COLOR_BG_BASE = "#262626"
+    COLOR_BG_PANEL = "#323232"
+    COLOR_BG_SURFACE = "#3d3d3d"
+    COLOR_BG_HOVER = "#4a4a4a"
+    COLOR_BORDER_SUBTLE = "#474747"
+    COLOR_BORDER_ACTIVE = "#c86e00"
+    COLOR_ACCENT = "#c86e00"
+    COLOR_ACCENT_HOVER = "#db7908"
+    COLOR_ACCENT_ACTIVE = "#a35500"
+    COLOR_ACCENT_SUBTLE = "#291e10"
+    COLOR_TEXT = "#f5f5f5"
+    COLOR_TEXT_PRIMARY = COLOR_TEXT
+    COLOR_TEXT_MUTED = "#b8b8b8"
+    COLOR_TEXT_DIM = "#7a7a7a"
+
+    # Status Colors (Restrained Palette)
+    COLOR_SUCCESS = "#22c55e"
+    COLOR_READY = COLOR_SUCCESS
+    COLOR_MODIFIED = "#c86e00"
+    COLOR_WAITING = "#d97706"
+    COLOR_ERROR = "#f43f5e"
+
+    # Backward compatibility aliases
+    COLOR_BG = COLOR_BG_BASE
+    COLOR_PANEL = COLOR_BG_PANEL
     
     DEFAULT_BRUSH_SIZE = 40
     MAX_HISTORY = 20
