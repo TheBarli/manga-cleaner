@@ -205,7 +205,7 @@ class MainWindow(QMainWindow):
         self.chk_all = QCheckBox()
         self.chk_all.toggled.connect(self.toggle_all_files)
         lbl_assets = QLabel("PROJECT ASSETS")
-        lbl_assets.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold; font-size: 10px;")
+        lbl_assets.setObjectName("AssetsHeading")
         header_lay.addWidget(self.chk_all)
         header_lay.addWidget(lbl_assets)
         header_lay.addStretch()
@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
         rp_lay = QVBoxLayout(self.rp)
         
         self.mode_lbl = QLabel("MODE: PAINTING")
-        self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold; font-size: 10px;")
+        self.mode_lbl.setObjectName("ModeLabel")
         rp_lay.addWidget(self.mode_lbl)
         
         self.tools = ToolGroup("Drawing Tools", ["MOVE", "BRUSH", "ERASER", "RECT", "LASSO", "POLY", "BUCKET", "CLEAR"])
@@ -313,7 +313,7 @@ class MainWindow(QMainWindow):
             self.btn_photoshop.clicked.connect(self.on_send_to_photoshop)
         
         self.queue_lbl = QLabel("Processing / Queued: 0")
-        self.queue_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
+        self.queue_lbl.setObjectName("QueueLabel")
         self.queue_lbl.setAlignment(Qt.AlignCenter)
 
         self.progress_bar = QProgressBar()
@@ -360,36 +360,24 @@ class MainWindow(QMainWindow):
         self.status_bar.setFixedHeight(26)
 
         self.status_file_lbl = QLabel("No file loaded")
-        self.status_file_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_PRIMARY}; font-weight: 600; padding: 0 8px;")
+        self.status_file_lbl.setObjectName("StatusFileLabel")
         self.status_file_lbl.setToolTip("Active image filename")
 
         self.status_tool_lbl = QLabel("Tool: Move")
-        self.status_tool_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+        self.status_tool_lbl.setObjectName("StatusToolLabel")
 
         self.status_history_lbl = QLabel(f"History: 0/{Config.MAX_HISTORY}")
-        self.status_history_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+        self.status_history_lbl.setObjectName("StatusHistoryLabel")
         self.status_history_lbl.setToolTip("Unified Undo/Redo Action Stack Depth")
 
         self.status_coord_lbl = QLabel("X: -  Y: -")
-        self.status_coord_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+        self.status_coord_lbl.setObjectName("StatusCoordLabel")
 
         self.status_dim_lbl = QLabel("")
-        self.status_dim_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+        self.status_dim_lbl.setObjectName("StatusDimLabel")
 
         self.status_zoom_btn = QPushButton("100%")
-        self.status_zoom_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {Config.COLOR_TEXT_MUTED};
-                padding: 0 8px;
-                font-size: 11px;
-                font-weight: 500;
-            }}
-            QPushButton:hover {{
-                color: {Config.COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        self.status_zoom_btn.setObjectName("StatusZoomButton")
         zoom_menu = QMenu(self)
         zoom_menu.addAction("Fit to Screen (Ctrl+0)").triggered.connect(self.canvas.fit_to_screen)
         zoom_menu.addAction("100% Actual Size (Ctrl+1)").triggered.connect(self.canvas.reset_zoom)

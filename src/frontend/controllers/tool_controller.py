@@ -125,7 +125,9 @@ class ToolController:
             self.window.canvas.cursor_item.hide()
             self.window.tools.buttons["MOVE"].setChecked(True)
             self.window.mode_lbl.setText("MODE: MOVING")
-            self.window.mode_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold;")
+            self.window.mode_lbl.setProperty("state", "dim")
+            self.window.mode_lbl.style().unpolish(self.window.mode_lbl)
+            self.window.mode_lbl.style().polish(self.window.mode_lbl)
             
         else:
             self.window.canvas.setDragMode(QGraphicsView.NoDrag)
@@ -152,13 +154,15 @@ class ToolController:
             
             if tool == "ERASER":
                 self.window.mode_lbl.setText("MODE: ERASING")
-                self.window.mode_lbl.setStyleSheet(f"color: {Config.COLOR_MODIFIED}; font-weight: bold;")
+                self.window.mode_lbl.setProperty("state", "erase")
             elif tool == "BUCKET":
                 self.window.mode_lbl.setText("MODE: FILLING")
-                self.window.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
+                self.window.mode_lbl.setProperty("state", "normal")
             else:
                 self.window.mode_lbl.setText("MODE: PAINTING")
-                self.window.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
+                self.window.mode_lbl.setProperty("state", "normal")
+            self.window.mode_lbl.style().unpolish(self.window.mode_lbl)
+            self.window.mode_lbl.style().polish(self.window.mode_lbl)
 
         tool_names = {
             "NONE": "Move",

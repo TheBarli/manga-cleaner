@@ -86,7 +86,7 @@ class ToolGroup(QFrame):
         main_lay.setSpacing(4)
         
         lbl = QLabel(title.upper())
-        lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 9px; font-weight: bold;")
+        lbl.setObjectName("ToolGroupHeading")
         main_lay.addWidget(lbl)
         
         grid_lay = QGridLayout()
@@ -121,7 +121,7 @@ class HardwareMonitor(QFrame):
         lay.setSpacing(6)
         
         self.lbl = QLabel("SYSTEM IDLE")
-        self.lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: 500; font-size: 10px;")
+        self.lbl.setObjectName("HardwareMonitorLabel")
         
         self.bar = QSlider(Qt.Horizontal)
         self.bar.setRange(0, 100)
@@ -141,7 +141,7 @@ class LabeledSlider(QWidget):
         lay = QVBoxLayout(self)
         
         self.display = QLabel("")
-        self.display.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-size: 10px; font-weight: 500;")
+        self.display.setObjectName("SliderValueLabel")
         
         self.slider = QSlider(Qt.Horizontal)
         if is_tile:

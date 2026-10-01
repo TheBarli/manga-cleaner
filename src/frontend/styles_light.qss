@@ -284,3 +284,77 @@ QToolTip {
     padding: 3px 6px;
     font-size: 11px;
 }
+
+/* Panel Section & Status Headings */
+#AssetsHeading {
+    color: #666666;
+    font-weight: bold;
+    font-size: 10px;
+}
+
+#ToolGroupHeading {
+    color: #888888;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+#ModeLabel {
+    color: #c86e00;
+    font-weight: bold;
+    font-size: 10px;
+}
+
+#ModeLabel[state="dim"] {
+    color: #999999;
+}
+
+#ModeLabel[state="erase"] {
+    color: #0284c7;
+}
+
+#ModeLabel[state="normal"] {
+    color: #c86e00;
+}
+
+#QueueLabel {
+    color: #777777;
+    font-size: 10px;
+}
+
+#SliderValueLabel {
+    color: #666666;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+#HardwareMonitorLabel {
+    color: #666666;
+    font-weight: 500;
+    font-size: 10px;
+}
+
+/* Status Bar Labels & Buttons */
+#StatusFileLabel {
+    color: #1e1e1e;
+    font-weight: 600;
+    padding: 0 8px;
+}
+
+#StatusToolLabel, #StatusHistoryLabel, #StatusCoordLabel, #StatusDimLabel {
+    color: #666666;
+    padding: 0 8px;
+}
+
+#StatusZoomButton {
+    background: transparent;
+    border: none;
+    color: #666666;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+#StatusZoomButton:hover {
+    color: #000000;
+}
+
