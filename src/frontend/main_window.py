@@ -1,33 +1,20 @@
-import os
-import cv2
-import numpy as np
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QPushButton, QFrame, QSplitter, QFileDialog,
-                             QMenu, QMessageBox, QGraphicsView, QProgressBar,
-                             QDialog, QComboBox, QDialogButtonBox, QFormLayout, QCheckBox)
-from PySide6.QtGui import QShortcut, QKeySequence, QImage, QPainterPath
-from PySide6.QtCore import Qt, QTimer, QThread
-from enum import Enum, auto
+                             QLabel, QPushButton, QFrame, QSplitter,
+                             QMenu, QProgressBar, QCheckBox)
+from PySide6.QtGui import QKeySequence
+from PySide6.QtCore import Qt, QTimer
 from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
 from src.frontend.canvas import MangaCanvas
 from src.frontend.help_system import HelpSystem
+from src.frontend.dialogs.batch_setup import BatchSetupDialog
+from src.frontend.controllers import (
+    ToolController, SessionManager, PageState, PipelineController, BatchController
+)
 from src.utils.system_info import SystemMonitor
 from src.utils.history import HistoryManager
 from src.utils.config import Config
-from src.utils.paths import Paths
 from src.utils.logger import logger
-from src.backend.batch_engine import BatchEngine
-from src.backend.workers import AIWorker
 
-#/////////////////////////////////#
-#         PAGE STATE ENUM         #
-#/////////////////////////////////#
-class PageState(Enum):
-    UNMODIFIED = auto()
-    MODIFIED = auto()
-    WAITING = auto()
-    READY = auto()
-    ERROR = auto()
 
 #/////////////////////////////////#
 #   STUDIO MAIN CONTROLLER        #
@@ -41,33 +28,148 @@ class MainWindow(QMainWindow):
 
         self.monitor = SystemMonitor()
         self.history = HistoryManager(Config.MAX_HISTORY)
-        self.batch_engine = BatchEngine()
-        self.worker_thread = None
-        self.is_batching = False
-        
-        # Tool Toggle States
-        self.is_alt_erasing = False 
-        self.is_alt_brushing = False 
-        self.is_space_moving = False
-        self.pre_space_tool = "NONE"
-        
-        self.current_img_path = None
-        self.batch_scan_type = "ocr"
-        self.image_sessions = {}
-        self.page_states = {}
-        self.task_queue = []
-        self.total_tasks = 0
-        self.completed_tasks = 0
-        self.total_lama_tasks = 0
-        self.completed_lama_tasks = 0
-        
+
+        # Domain Controllers
+        self.session_manager = SessionManager(self)
+        self.batch_controller = BatchController(self)
+        self.pipeline_controller = PipelineController(self)
+        self.tool_controller = ToolController(self)
+
         self.init_ui()
         self.setup_shortcuts()
-        
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_telemetry)
         self.timer.start(2000)
         logger.info("--- STUDIO INTERFACE READY ---")
+
+    #/////////////////////////////////#
+    #    BACKWARD COMPATIBILITY       #
+    #/////////////////////////////////#
+
+    @property
+    def image_sessions(self):
+        return self.session_manager.image_sessions
+
+    @property
+    def page_states(self):
+        return self.session_manager.page_states
+
+    @property
+    def current_img_path(self):
+        return self.session_manager.current_img_path
+
+    @current_img_path.setter
+    def current_img_path(self, val):
+        self.session_manager.current_img_path = val
+
+    @property
+    def batch_engine(self):
+        return self.batch_controller.batch_engine
+
+    @property
+    def is_batching(self):
+        return self.batch_controller.is_batching
+
+    @is_batching.setter
+    def is_batching(self, val):
+        self.batch_controller.is_batching = val
+
+    @property
+    def batch_scan_type(self):
+        return self.batch_controller.batch_scan_type
+
+    @batch_scan_type.setter
+    def batch_scan_type(self, val):
+        self.batch_controller.batch_scan_type = val
+
+    @property
+    def task_queue(self):
+        return self.pipeline_controller.task_queue
+
+    @property
+    def total_tasks(self):
+        return self.pipeline_controller.total_tasks
+
+    @total_tasks.setter
+    def total_tasks(self, val):
+        self.pipeline_controller.total_tasks = val
+
+    @property
+    def completed_tasks(self):
+        return self.pipeline_controller.completed_tasks
+
+    @completed_tasks.setter
+    def completed_tasks(self, val):
+        self.pipeline_controller.completed_tasks = val
+
+    @property
+    def total_lama_tasks(self):
+        return self.pipeline_controller.total_lama_tasks
+
+    @total_lama_tasks.setter
+    def total_lama_tasks(self, val):
+        self.pipeline_controller.total_lama_tasks = val
+
+    @property
+    def completed_lama_tasks(self):
+        return self.pipeline_controller.completed_lama_tasks
+
+    @completed_lama_tasks.setter
+    def completed_lama_tasks(self, val):
+        self.pipeline_controller.completed_lama_tasks = val
+
+    @property
+    def worker_thread(self):
+        return self.pipeline_controller.worker_thread
+
+    @worker_thread.setter
+    def worker_thread(self, val):
+        self.pipeline_controller.worker_thread = val
+
+    @property
+    def worker(self):
+        return self.pipeline_controller.worker
+
+    @worker.setter
+    def worker(self, val):
+        self.pipeline_controller.worker = val
+
+    @property
+    def is_alt_erasing(self):
+        return self.tool_controller.is_alt_erasing
+
+    @is_alt_erasing.setter
+    def is_alt_erasing(self, val):
+        self.tool_controller.is_alt_erasing = val
+
+    @property
+    def is_alt_brushing(self):
+        return self.tool_controller.is_alt_brushing
+
+    @is_alt_brushing.setter
+    def is_alt_brushing(self, val):
+        self.tool_controller.is_alt_brushing = val
+
+    @property
+    def is_space_moving(self):
+        return self.tool_controller.is_space_moving
+
+    @is_space_moving.setter
+    def is_space_moving(self, val):
+        self.tool_controller.is_space_moving = val
+
+    @property
+    def pre_space_tool(self):
+        return self.tool_controller.pre_space_tool
+
+    @pre_space_tool.setter
+    def pre_space_tool(self, val):
+        self.tool_controller.pre_space_tool = val
+
+    #/////////////////////////////////#
+    #         UI CONSTRUCTION         #
+    #/////////////////////////////////#
 
     def init_ui(self):
         self.central = QWidget()
@@ -301,642 +403,149 @@ class MainWindow(QMainWindow):
         help_menu.addAction("Documentation & Shortcuts", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
-        # Single-key Tool Selectors
-        QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.set_tool("BRUSH"))
-        QShortcut(QKeySequence("E"), self).activated.connect(lambda: self.set_tool("ERASER"))
-        QShortcut(QKeySequence("R"), self).activated.connect(lambda: self.set_tool("RECT"))
-        QShortcut(QKeySequence("L"), self).activated.connect(lambda: self.set_tool("LASSO"))
-        QShortcut(QKeySequence("P"), self).activated.connect(lambda: self.set_tool("POLY"))
-        QShortcut(QKeySequence("G"), self).activated.connect(lambda: self.set_tool("BUCKET"))
-        QShortcut(QKeySequence("M"), self).activated.connect(lambda: self.set_tool("NONE"))
-        
-        # AI & Detection Operations
-        QShortcut(QKeySequence("O"), self).activated.connect(self.on_ocr_scan)
-        QShortcut(QKeySequence("T"), self).activated.connect(self.on_transparency_scan)
-        QShortcut(QKeySequence("C"), self).activated.connect(self.on_lama_clean)
+        self.tool_controller.setup_shortcuts()
 
-        # Dynamic Brush Resize Brackets
-        QShortcut(QKeySequence("["), self).activated.connect(lambda: self.adjust_brush_size(-5))
-        QShortcut(QKeySequence("]"), self).activated.connect(lambda: self.adjust_brush_size(5))
-        QShortcut(QKeySequence("Shift+["), self).activated.connect(lambda: self.adjust_brush_size(-20))
-        QShortcut(QKeySequence("Shift+]"), self).activated.connect(lambda: self.adjust_brush_size(20))
+    #/////////////////////////////////#
+    #    DELEGATES: TOOL CONTROLLER   #
+    #/////////////////////////////////#
 
-        # Rapid Page Navigation
-        QShortcut(QKeySequence(Qt.Key_PageDown), self).activated.connect(lambda: self.navigate_file(1))
-        QShortcut(QKeySequence(Qt.Key_PageUp), self).activated.connect(lambda: self.navigate_file(-1))
-        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self.navigate_file(1))
-        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self.navigate_file(-1))
-        QShortcut(QKeySequence("Alt+Right"), self).activated.connect(lambda: self.navigate_file(1))
-        QShortcut(QKeySequence("Alt+Left"), self).activated.connect(lambda: self.navigate_file(-1))
+    def adjust_brush_size(self, delta: int):
+        self.tool_controller.adjust_brush_size(delta)
 
-    def adjust_brush_size(self, delta):
-        new_size = max(1, min(300, self.canvas.brush_size + delta))
-        self.canvas.set_brush_size(new_size, show_hud=True)
+    def set_tool(self, tool: str):
+        self.tool_controller.set_tool(tool)
 
     def keyPressEvent(self, event):
-        # Trigger inverse tool temporarily if Alt is held down
-        if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
-            if self.canvas.current_tool == "BRUSH":
-                self.is_alt_erasing = True
-                self.set_tool("ERASER")
-            elif self.canvas.current_tool == "ERASER":
-                self.is_alt_brushing = True
-                self.set_tool("BRUSH")
-                
-        # Trigger Move temporarily if Space is held down
-        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
-            if not getattr(self, 'is_space_moving', False):
-                self.is_space_moving = True
-                self.pre_space_tool = self.canvas.current_tool
-                self.set_tool("NONE")
-
-        # Hold Backslash to Compare with Original Scan
-        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
-            self.canvas.show_comparison(True)
-                
+        self.tool_controller.handle_key_press(event)
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
-        # Release Backslash to return to cleaned/current view
-        if event.key() == Qt.Key_Backslash and not event.isAutoRepeat():
-            self.canvas.show_comparison(False)
-
-        # Snap back to opposite tool when Alt is released
-        if event.key() == Qt.Key_Alt and not event.isAutoRepeat():
-            if getattr(self, 'is_alt_erasing', False):
-                self.is_alt_erasing = False
-                if self.canvas.current_tool == "ERASER":
-                    self.set_tool("BRUSH")
-            elif getattr(self, 'is_alt_brushing', False):
-                self.is_alt_brushing = False
-                if self.canvas.current_tool == "BRUSH":
-                    self.set_tool("ERASER")
-                    
-        # Snap back to previous tool when Space is released
-        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
-            if getattr(self, 'is_space_moving', False):
-                self.is_space_moving = False
-                if self.canvas.current_tool == "NONE":
-                    self.set_tool(self.pre_space_tool)
-                    
+        self.tool_controller.handle_key_release(event)
         super().keyReleaseEvent(event)
 
-    def set_tool(self, tool):
-        # Prevent dangling poly lines if user swaps tools mid-selection
-        if self.canvas.current_tool == "POLY" and tool != "POLY":
-            self.canvas.poly_points.clear()
-            self.canvas.preview_item.setPath(QPainterPath())
-
-        self.canvas.current_tool = tool
-        for btn in self.tools.buttons.values(): 
-            btn.setChecked(False)
-        
-        # Ensure correct visual cursor state
-        self.canvas.update_cursor_visuals()
-        
-        if tool == "NONE":
-            self.canvas.setDragMode(QGraphicsView.ScrollHandDrag)
-            self.canvas.viewport().unsetCursor()
-            self.canvas.cursor_item.hide()
-            self.tools.buttons["MOVE"].setChecked(True)
-            self.mode_lbl.setText("MODE: MOVING")
-            self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-weight: bold;")
-            
-        else:
-            self.canvas.setDragMode(QGraphicsView.NoDrag)
-            
-            if tool in ["BRUSH", "ERASER"]:
-                if not self.canvas.is_locked:
-                    self.canvas.viewport().setCursor(Qt.BlankCursor)
-                    self.canvas.cursor_item.show()
-                else:
-                    self.canvas.viewport().unsetCursor()
-            else:
-                if not self.canvas.is_locked:
-                    self.canvas.viewport().setCursor(Qt.CrossCursor)
-                else:
-                    self.canvas.viewport().unsetCursor()
-                self.canvas.cursor_item.hide()
-            
-            mapping = {"BRUSH": "BRUSH", "ERASER": "ERASER", "RECT": "RECT", "LASSO": "LASSO", "POLY": "POLY", "BUCKET": "BUCKET"}
-            if tool in mapping: 
-                self.tools.buttons[mapping[tool]].setChecked(True)
-            
-            if tool == "ERASER":
-                self.mode_lbl.setText("MODE: ERASING")
-                self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_MODIFIED}; font-weight: bold;")
-            elif tool == "BUCKET":
-                self.mode_lbl.setText("MODE: FILLING")
-                self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
-            else:
-                self.mode_lbl.setText("MODE: PAINTING")
-                self.mode_lbl.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-weight: bold;")
-
-        tool_names = {
-            "NONE": "Move",
-            "BRUSH": "Brush",
-            "ERASER": "Eraser",
-            "RECT": "Rectangle",
-            "LASSO": "Lasso",
-            "POLY": "Polygonal",
-            "BUCKET": "Bucket Fill"
-        }
-        if hasattr(self, 'status_tool_lbl'):
-            self.status_tool_lbl.setText(f"Tool: {tool_names.get(tool, tool.capitalize())}")
-
-    def toggle_all_files(self, checked):
-        """Checks or unchecks all files in the list"""
-        state = Qt.Checked if checked else Qt.Unchecked
-        for i in range(self.file_list.count()):
-            self.file_list.item(i).setCheckState(state)
-
     #/////////////////////////////////#
-    #      HISTORY OPERATIONS         #
-    #/////////////////////////////////#
-
-    def on_undo(self):
-        if self.canvas.is_locked: return
-        res = self.history.undo(self.canvas.cv_img, self.canvas.mask)
-        if not res: return
-
-        self.mark_current_modified()
-        if res.get("type") == "mask":
-            self.canvas.mask = res["mask"].copy()
-            self.canvas.update_mask_display()
-        elif res.get("type") == "image":
-            self.canvas.set_image(res["img"])
-            if res.get("restore_mask") is not None:
-                self.canvas.mask = res["restore_mask"].copy()
-                self.canvas.update_mask_display()
-
-    def on_redo(self):
-        if self.canvas.is_locked: return
-        res = self.history.redo(self.canvas.cv_img, self.canvas.mask)
-        if not res: return
-
-        self.mark_current_modified()
-        if res.get("type") == "mask":
-            self.canvas.mask = res["mask"].copy()
-            self.canvas.update_mask_display()
-        elif res.get("type") == "image":
-            self.canvas.set_image(res["img"])
-            if res.get("clear_mask"):
-                self.canvas.clear_mask()
-
-    def on_undo_image(self):
-        self.on_undo()
-
-    def on_redo_image(self):
-        self.on_redo()
-
-    def on_undo_mask(self):
-        self.on_undo()
-
-    def on_redo_mask(self):
-        self.on_redo()
-
-    #/////////////////////////////////#
-    #      AI EXECUTION PIPELINE      #
+    #  DELEGATES: PIPELINE CONTROLLER #
     #/////////////////////////////////#
 
     def _check_lock_state(self):
-        """Identifies ALL files currently being processed or waiting and globally updates UI"""
-        locked_paths = set()
-        
-        # 1. Grab file currently running in AI worker thread
-        if self.worker_thread is not None and hasattr(self, 'worker'):
-            active_path = getattr(self.worker, 'source_path', None)
-            if active_path: locked_paths.add(active_path)
-            
-        # 2. Grab all manual/single-task queued files
-        for item in self.task_queue:
-            locked_paths.add(item["path"])
-                
-        # 3. Grab all remaining files waiting in the Batch Engine queue
-        if self.is_batching:
-            for idx in range(self.batch_engine.current_index, len(self.batch_engine.files)):
-                locked_paths.add(self.batch_engine.files[idx])
-
-        # 4. Globally update the FileList UI checkboxes and lock icons
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            file_path = item.data(Qt.UserRole)
-            is_locked = (file_path in locked_paths)
-            item.setData(Qt.UserRole + 2, is_locked)
-
-        # 5. Lock/Unlock the main interactive Canvas if we're looking at a locked file
-        if self.current_img_path:
-            self.canvas.set_locked(self.current_img_path in locked_paths)
-        else:
-            self.canvas.set_locked(False)
+        self.pipeline_controller._check_lock_state()
 
     def _update_queue_ui(self):
-        """Updates the status label, global progress bar, and active lock states"""
-        pending = self.total_lama_tasks - self.completed_lama_tasks
-        self.queue_lbl.setText(f"Processing / Queued: {pending}")
-
-        if pending > 0 and self.total_lama_tasks > 0:
-            val = int((self.completed_lama_tasks / self.total_lama_tasks) * 100)
-            self.progress_bar.setValue(val)
-            self.progress_bar.setVisible(True)
-        else:
-            self.progress_bar.setVisible(False)
-            self.total_lama_tasks = 0
-            self.completed_lama_tasks = 0
-            
-        self._check_lock_state()
+        self.pipeline_controller._update_queue_ui()
 
     def on_worker_progress(self, val):
-        """Calculates fractional progress for smooth overall queue tracking"""
-        if self.worker.task != "clean" or self.total_lama_tasks == 0: return
-        base_progress = (self.completed_lama_tasks / self.total_lama_tasks) * 100
-        task_fraction = (val / 100.0) * (100 / self.total_lama_tasks)
-        self.progress_bar.setValue(int(base_progress + task_fraction))
+        self.pipeline_controller.on_worker_progress(val)
 
-    def enqueue_task(self, task, path, *args):
-        """Pushes an AI task into the FIFO queue and triggers the processor"""
-        self.task_queue.append({
-            "task": task,
-            "path": path,
-            "args": args
-        })
-        self._update_queue_ui()
-        self._process_queue()
+    def enqueue_task(self, task: str, path: str, *args):
+        self.pipeline_controller.enqueue_task(task, path, *args)
 
     def _process_queue(self):
-        """Pulls the next task from the queue and runs it"""
-        if self.worker_thread is not None:
-            return
-
-        if not self.task_queue:
-            self._update_queue_ui()
-            # Models stay resident in VRAM for instant subsequent inferences
-            return
-
-        item = self.task_queue.pop(0)
-        source_path = item["path"]
-        
-        # Update status to WAITING since AI is processing it now
-        self.page_states[source_path] = PageState.WAITING
-        self.file_list.update_item_state(source_path, "waiting")
-
-        self.setCursor(Qt.WaitCursor)
-        self.worker_thread = QThread()
-        self.worker = AIWorker(item["task"], item["args"])
-        self.worker.source_path = source_path
-
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.process)
-        self.worker.progress.connect(self.on_worker_progress)
-        self.worker.finished.connect(self.on_task_finished)
-        self.worker.error.connect(self.on_task_error)
-        self.worker_thread.finished.connect(self.worker.deleteLater)
-        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
-
-        self.worker_thread.start()
-        self._update_queue_ui() 
+        self.pipeline_controller._process_queue()
 
     def stop_thread(self):
-        self.setCursor(Qt.ArrowCursor)
-        if self.worker_thread:
-            self.worker_thread.quit()
-            self.worker_thread.wait()
-            self.worker_thread = None
-        self._update_queue_ui()
+        self.pipeline_controller.stop_thread()
 
-    def on_task_error(self, message):
-        source_path = getattr(self.worker, 'source_path', None)
-        if source_path:
-            self.page_states[source_path] = PageState.ERROR
-            self.file_list.update_item_state(source_path, "error")
-
-        self.stop_thread()
-        self.is_batching = False
-        self.task_queue.clear()
-        self.total_lama_tasks = 0
-        self.completed_lama_tasks = 0
-        self._update_queue_ui()
-        QMessageBox.critical(self, "Hardware Error", message)
+    def on_task_error(self, message: str):
+        self.pipeline_controller.on_task_error(message)
 
     def on_task_finished(self, result, patches):
-        task = self.worker.task  
-        source_path = getattr(self.worker, 'source_path', self.current_img_path)
-        is_active = (source_path == self.current_img_path)
-
-        new_state = PageState.READY if task == "clean" else PageState.MODIFIED
-        self.page_states[source_path] = new_state
-        self.file_list.update_item_state(source_path, new_state.name.lower())
-
-        if task == "clean":
-            self.completed_lama_tasks += 1
-            target_history = self.history if is_active else self.image_sessions[source_path]["history"]
-            saved_mask = self.canvas.mask.copy() if is_active else self.image_sessions[source_path]["mask"].copy()
-            if len(patches) > 0:
-                target_history.push_image_clean(patches, result, saved_mask=saved_mask)
-
-            if is_active:
-                self.canvas.set_image(result)
-                self.canvas.clear_mask()
-            else:
-                self.image_sessions[source_path]["img"] = result
-                self.image_sessions[source_path]["mask"].fill(Qt.transparent)
-
-        elif task in ["ocr", "transparency"]:
-            target_history = self.history if is_active else self.image_sessions[source_path]["history"]
-            current_mask = self.canvas.mask if is_active else self.image_sessions[source_path]["mask"]
-            target_history.push_mask_state(current_mask)
-
-            h, w = result.shape[:2]
-            rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [244, 63, 94, 255]
-            new_mask = QImage(rgba.data, w, h, w*4, QImage.Format_ARGB32).copy()
-
-            if is_active:
-                self.canvas.mask = new_mask
-                self.canvas.update_mask_display()
-            else:
-                self.image_sessions[source_path]["mask"] = new_mask
-
-        self.stop_thread()
-
-        # Handle Background Batching Loop
-        if self.is_batching:
-            if task == "clean":
-                final_img = self.canvas.cv_img if is_active else self.image_sessions[source_path]["img"]
-                is_last = self.batch_engine.save_current(final_img)
-                if is_last: self.finalize_batch()
-                else: self.step_batch()
-            elif task in ["ocr", "transparency"]:
-                mask_q = self.canvas.mask if is_active else self.image_sessions[source_path]["mask"]
-                img_cv = self.canvas.cv_img if is_active else self.image_sessions[source_path]["img"]
-
-                ptr = mask_q.bits()
-                mask_np = np.frombuffer(ptr, np.uint8).reshape((mask_q.height(), mask_q.width(), 4))
-                mask_gray = mask_np[:, :, 3].copy()
-                t_size = self.t_slider.slider.value() * 512
-                self.enqueue_task("clean", source_path, img_cv.copy(), mask_gray, t_size)
-
-        self._process_queue()
+        self.pipeline_controller.on_task_finished(result, patches)
 
     def on_ocr_scan(self):
-        if self.canvas.cv_img is None or self.canvas.is_locked: return
-        self.mark_current_modified()
-        self.enqueue_task("ocr", self.current_img_path, self.canvas.cv_img.copy())
+        self.pipeline_controller.on_ocr_scan()
 
     def on_transparency_scan(self):
-        if self.canvas.cv_img is None or not self.current_img_path or self.canvas.is_locked: return
-        self.mark_current_modified()
-        self.enqueue_task("transparency", self.current_img_path, self.canvas.cv_img.copy())
+        self.pipeline_controller.on_transparency_scan()
 
     def on_lama_clean(self):
-        if self.canvas.cv_img is None or self.canvas.is_locked: return
-        ptr = self.canvas.mask.bits()
-        mask_np = np.frombuffer(ptr, np.uint8).reshape((self.canvas.mask.height(), self.canvas.mask.width(), 4))
-        mask_gray = mask_np[:, :, 3].copy()
+        self.pipeline_controller.on_lama_clean()
 
-        if not np.any(mask_gray):
-            if self.is_batching:
-                is_last = self.batch_engine.save_current(self.canvas.cv_img)
-                if is_last: self.finalize_batch()
-                else: self.step_batch()
-            else:
-                self.show_toast("No mask area detected", "warning")
-            return
+    def on_undo(self):
+        self.pipeline_controller.on_undo()
 
-        self.total_lama_tasks += 1
-        t_size = self.t_slider.slider.value() * 512
-        self.mark_current_modified()
-        self.enqueue_task("clean", self.current_img_path, self.canvas.cv_img.copy(), mask_gray, t_size)
+    def on_redo(self):
+        self.pipeline_controller.on_redo()
+
+    def on_undo_image(self):
+        self.pipeline_controller.on_undo_image()
+
+    def on_redo_image(self):
+        self.pipeline_controller.on_redo_image()
+
+    def on_undo_mask(self):
+        self.pipeline_controller.on_undo_mask()
+
+    def on_redo_mask(self):
+        self.pipeline_controller.on_redo_mask()
 
     #/////////////////////////////////#
-    #    BATCH & PHOTOSHOP BRIDGE     #
+    #   DELEGATES: BATCH CONTROLLER   #
     #/////////////////////////////////#
 
     def on_start_batch(self):
-        if self.file_list.count() == 0: return
-
-        dialog = BatchSetupDialog(self)
-        if dialog.exec() != QDialog.Accepted:
-            return
-
-        scan_choice, fmt = dialog.get_results()
-        if scan_choice == "Transparency Scan": self.batch_scan_type = "transparency"
-        elif scan_choice == "Mask": self.batch_scan_type = "mask"
-        elif scan_choice == "none": self.batch_scan_type = "none"
-        else: self.batch_scan_type = "ocr"
-
-        # Check if any specific files were checked in the UI
-        paths = []
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            if item.checkState() == Qt.Checked:
-                paths.append(item.data(Qt.UserRole))
-
-        # If absolutely no checkboxes are checked, default to ALL files
-        if not paths:
-            self.chk_all.setChecked(True)
-            paths = [self.file_list.item(i).data(Qt.UserRole) for i in range(self.file_list.count())]
-
-        self.batch_engine.initialize_batch(paths, fmt)
-        self.is_batching = True
-        self.total_lama_tasks += len(paths)
-        self.step_batch()
-        self._check_lock_state()
+        self.batch_controller.on_start_batch()
 
     def step_batch(self):
-        path = self.batch_engine.get_next()
-        if path:
-            if path not in self.image_sessions:
-                img_data = np.fromfile(path, dtype=np.uint8)
-                img = cv2.imdecode(img_data, cv2.IMREAD_UNCHANGED)
-                if img is not None:
-                    if len(img.shape) == 2: img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-                    elif len(img.shape) == 3 and img.shape[2] == 4: img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
-                    else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-                    self.image_sessions[path] = {
-                        "img": img.copy(),
-                        "orig": img.copy(),
-                        "mask": QImage(img.shape[1], img.shape[0], QImage.Format_ARGB32),
-                        "history": HistoryManager(Config.MAX_HISTORY)
-                    }
-                    self.image_sessions[path]["mask"].fill(Qt.transparent)
-
-            is_active = (path == self.current_img_path)
-
-            if self.batch_scan_type == "none":
-                img_cv = self.canvas.cv_img if is_active else self.image_sessions[path]["img"]
-                self.total_lama_tasks -= 1
-                
-                self.page_states[path] = PageState.READY
-                self.file_list.update_item_state(path, "ready")
-                self._update_queue_ui()
-                
-                is_last = self.batch_engine.save_current(img_cv)
-                if is_last: self.finalize_batch()
-                else: QTimer.singleShot(0, self.step_batch)
-                return
-                
-            elif self.batch_scan_type == "mask":
-                mask_q = self.canvas.mask if is_active else self.image_sessions[path]["mask"]
-                img_cv = self.canvas.cv_img if is_active else self.image_sessions[path]["img"]
-
-                ptr = mask_q.bits()
-                mask_np = np.frombuffer(ptr, np.uint8).reshape((mask_q.height(), mask_q.width(), 4))
-                mask_gray = mask_np[:, :, 3].copy()
-
-                if not np.any(mask_gray):
-                    self.total_lama_tasks -= 1
-                    self.page_states[path] = PageState.READY
-                    self.file_list.update_item_state(path, "ready")
-                    self._update_queue_ui()
-                    
-                    is_last = self.batch_engine.save_current(img_cv)
-                    if is_last: self.finalize_batch()
-                    else: QTimer.singleShot(0, self.step_batch)
-                    return
-
-                t_size = self.t_slider.slider.value() * 512
-                self.enqueue_task("clean", path, img_cv.copy(), mask_gray, t_size)
-            else:
-                img_cv = self.canvas.cv_img if is_active else self.image_sessions[path]["img"]
-                self.enqueue_task(self.batch_scan_type, path, img_cv.copy())
+        self.batch_controller.step_batch()
 
     def finalize_batch(self):
-        self.is_batching = False
-        self._check_lock_state()
-            
-        if self.batch_engine.export_format == "none":
-            self.show_toast("Batch Complete: Pages updated in studio memory", "success", 4000)
-        else:
-            self.show_toast(f"Batch Complete: Saved to {os.path.basename(self.batch_engine.output_dir)}", "success", 4000)
+        self.batch_controller.finalize_batch()
 
     #/////////////////////////////////#
-    #        FILE OPERATIONS          #
+    #  DELEGATES: SESSION MANAGER     #
     #/////////////////////////////////#
 
     def on_open_image(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg *.webp)")
-        if p:
-            self.load_single_file(p)
+        self.session_manager.on_open_image()
 
     def on_open_folder(self):
-        p = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if p:
-            self.load_folder(p)
+        self.session_manager.on_open_folder()
 
     def load_single_file(self, path: str):
-        if not os.path.isfile(path):
-            return
-
-        # Synchronous check if already in file list
-        found_idx = -1
-        for i in range(self.file_list.count()):
-            if self.file_list.item(i).data(Qt.UserRole) == path:
-                found_idx = i
-                break
-
-        if found_idx >= 0:
-            self.file_list.setCurrentRow(found_idx)
-            item = self.file_list.item(found_idx)
-            if item:
-                self.on_file_clicked(item)
-        else:
-            self.page_states[path] = PageState.UNMODIFIED
-            self.file_list.add_file(path)
-            new_idx = self.file_list.count() - 1
-            self.file_list.setCurrentRow(new_idx)
-            item = self.file_list.item(new_idx)
-            if item:
-                self.on_file_clicked(item)
-
-        self.canvas.fit_to_screen()
+        self.session_manager.load_single_file(path)
 
     def load_folder(self, folder_path: str):
-        if not os.path.isdir(folder_path):
-            return
-        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
-        files = [os.path.join(folder_path, f) for f in sorted(os.listdir(folder_path)) if f.lower().endswith(valid_exts)]
-        if files:
-            self.load_files(files)
+        self.session_manager.load_folder(folder_path)
 
     def load_files(self, file_paths: list):
-        self.image_sessions.clear()
-        self.page_states.clear()
-        self.file_list.clear()
-        for full_path in file_paths:
-            self.page_states[full_path] = PageState.UNMODIFIED
-            self.file_list.add_file(full_path)
-        if self.file_list.count() > 0:
-            self.file_list.setCurrentRow(0)
-            item = self.file_list.item(0)
-            if item:
-                self.on_file_clicked(item)
+        self.session_manager.load_files(file_paths)
 
     def handle_dropped_images(self, paths: list):
-        if not paths:
-            return
-        if len(paths) == 1:
-            self.load_single_file(paths[0])
-        else:
-            first_idx = self.file_list.count()
-            for p in paths:
-                exists = any(self.file_list.item(i).data(Qt.UserRole) == p for i in range(self.file_list.count()))
-                if not exists:
-                    self.page_states[p] = PageState.UNMODIFIED
-                    self.file_list.add_file(p)
-            if self.file_list.count() > 0:
-                target_idx = first_idx if first_idx < self.file_list.count() else 0
-                self.file_list.setCurrentRow(target_idx)
-                item = self.file_list.item(target_idx)
-                if item:
-                    self.on_file_clicked(item)
-                    self.canvas.fit_to_screen()
+        self.session_manager.handle_dropped_images(paths)
 
     def navigate_file(self, direction: int):
-        total = self.file_list.count()
-        if total == 0:
-            return
-        curr = self.file_list.currentRow()
-        if curr < 0:
-            next_idx = 0 if direction > 0 else total - 1
-        else:
-            next_idx = (curr + direction) % total
-        self.file_list.setCurrentRow(next_idx)
-        item = self.file_list.item(next_idx)
-        if item:
-            self.on_file_clicked(item)
+        self.session_manager.navigate_file(direction)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
-            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
-                event.acceptProposedAction()
-                return
-        event.ignore()
+        self.session_manager.dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
-        if event.mimeData().hasUrls():
-            valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
-            if any(u.toLocalFile().lower().endswith(valid_exts) for u in event.mimeData().urls() if u.isLocalFile()):
-                event.acceptProposedAction()
-                return
-        event.ignore()
+        self.session_manager.dragMoveEvent(event)
 
     def dropEvent(self, event):
-        if not event.mimeData().hasUrls():
-            event.ignore()
-            return
-        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
-        paths = [
-            u.toLocalFile() for u in event.mimeData().urls()
-            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
-        ]
-        if paths:
-            event.acceptProposedAction()
-            self.handle_dropped_images(paths)
-        else:
-            event.ignore()
+        self.session_manager.dropEvent(event)
+
+    def mark_current_modified(self):
+        self.session_manager.mark_current_modified()
+
+    def on_file_clicked(self, it):
+        self.session_manager.on_file_clicked(it)
+
+    def on_quick_save(self):
+        self.session_manager.on_quick_save()
+
+    def on_export(self, fmt=None):
+        self.session_manager.on_export(fmt)
+
+    #/////////////////////////////////#
+    #    UI HELPERS & TELEMETRY       #
+    #/////////////////////////////////#
+
+    def toggle_all_files(self, checked: bool):
+        """Checks or unchecks all files in the list."""
+        state = Qt.Checked if checked else Qt.Unchecked
+        for i in range(self.file_list.count()):
+            self.file_list.item(i).setCheckState(state)
 
     def show_toast(self, message: str, level: str = "info", duration: int = 3000):
         if hasattr(self, 'toast'):
@@ -949,151 +558,7 @@ class MainWindow(QMainWindow):
             y = self.height() - self.toast.height() - 36
             self.toast.move(x, y)
 
-    def on_quick_save(self):
-        if self.canvas.cv_img is None or not self.current_img_path:
-            self.show_toast("No active image to save", "warning")
-            return
-
-        os.makedirs(Paths.PROCESSED, exist_ok=True)
-        filename = os.path.basename(self.current_img_path)
-        out_path = os.path.join(Paths.PROCESSED, filename)
-
-        img = self.canvas.cv_img
-        if len(img.shape) == 3 and img.shape[2] == 4:
-            img_out = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
-            ext = os.path.splitext(out_path)[1].lower()
-            if ext in [".jpg", ".jpeg"]:
-                img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
-        else:
-            img_out = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-        ext = os.path.splitext(out_path)[1]
-        if not ext:
-            out_path += ".png"
-            ext = ".png"
-
-        success, buf = cv2.imencode(ext, img_out)
-        if success:
-            buf.tofile(out_path)
-            self.page_states[self.current_img_path] = PageState.READY
-            self.file_list.update_item_state(self.current_img_path, "ready")
-            self.show_toast(f"Quick-saved: {filename}", "success")
-        else:
-            self.show_toast("Failed to encode image", "error")
-
-    def mark_current_modified(self):
-        """Transitions the page state to MODIFIED via Enum"""
-        if self.current_img_path:
-            if self.page_states.get(self.current_img_path) != PageState.MODIFIED:
-                self.page_states[self.current_img_path] = PageState.MODIFIED
-                self.file_list.update_item_state(self.current_img_path, "modified")
-
-    def on_file_clicked(self, it):
-        path_real = it.data(Qt.UserRole)
-        if path_real == self.current_img_path: return 
-
-        if self.current_img_path and self.canvas.cv_img is not None:
-            self.image_sessions[self.current_img_path] = {
-                "img": self.canvas.cv_img.copy(),
-                "orig": getattr(self.canvas, 'orig_img', self.canvas.cv_img).copy(),
-                "mask": self.canvas.mask.copy(),
-                "history": self.history
-            }
-
-        self.current_img_path = path_real
-
-        if path_real in self.image_sessions:
-            session = self.image_sessions[path_real]
-            self.history = session["history"]
-            self.canvas.set_image(session["img"], orig_img=session.get("orig"))
-            self.canvas.mask = session["mask"].copy()
-            self.canvas.update_mask_display()
-        else:
-            img_data = np.fromfile(path_real, dtype=np.uint8)
-            img = cv2.imdecode(img_data, cv2.IMREAD_UNCHANGED)
-
-            if img is not None:
-                if len(img.shape) == 2: img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-                elif len(img.shape) == 3 and img.shape[2] == 4: img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
-                else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-                self.history = HistoryManager(Config.MAX_HISTORY)
-                self.canvas.set_image(img, orig_img=img)
-                
-                self.image_sessions[path_real] = {
-                    "img": img.copy(),
-                    "orig": img.copy(),
-                    "mask": self.canvas.mask.copy(),
-                    "history": self.history
-                }
-            else:
-                self.show_toast(f"Corrupted or invalid image: {os.path.basename(path_real)}", "error")
-                logger.error(f"Failed to decode image: {path_real}")
-                
-        # Update status bar dimensions & color mode
-        if hasattr(self, 'status_dim_lbl') and self.canvas.cv_img is not None:
-            h, w = self.canvas.cv_img.shape[:2]
-            channels = "RGBA" if (len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4) else "RGB"
-            self.status_dim_lbl.setText(f"{w} × {h} px · {channels}")
-
-        self._check_lock_state()
-        self.canvas.setFocus()
-
-    def on_export(self, fmt=None):
-        if self.canvas.cv_img is None: return
-        path, sel_filter = QFileDialog.getSaveFileName(
-            self, "Export Image", "", "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
-        )
-        if path:
-            ext = os.path.splitext(path)[1].lower().lstrip(".")
-            if not ext:
-                ext = "png" if "PNG" in sel_filter else "jpg"
-                path = f"{path}.{ext}"
-            chosen_fmt = ext
-            if len(self.canvas.cv_img.shape) == 3 and self.canvas.cv_img.shape[2] == 4:
-                img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGBA2BGRA)
-                if chosen_fmt in ["jpg", "jpeg"]:
-                    img_out = cv2.cvtColor(img_out, cv2.COLOR_BGRA2BGR)
-            else:
-                img_out = cv2.cvtColor(self.canvas.cv_img, cv2.COLOR_RGB2BGR)
-                
-            is_success, im_buf_arr = cv2.imencode(f".{chosen_fmt}", img_out)
-            if is_success:
-                im_buf_arr.tofile(path)
-                self.show_toast(f"Exported: {os.path.basename(path)}", "success")
-
     def update_telemetry(self):
         ram, gpu = self.monitor.get_stats()
         self.hw_mon.lbl.setText(f"{'GPU' if gpu else 'CPU'} | RAM: {ram}MB")
         self.hw_mon.bar.setValue(min(ram // 40, 100))
-
-#/////////////////////////////////#
-#    BATCH SETUP DIALOG MODAL     #
-#/////////////////////////////////#
-
-class BatchSetupDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Batch Setup")
-        self.setStyleSheet(f"background-color: {Config.COLOR_PANEL}; color: {Config.COLOR_TEXT};")
-
-        self.scan_mode = QComboBox()
-        self.scan_mode.addItems(["none", "Mask", "OCR Scan", "Transparency Scan"])
-        self.scan_mode.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
-
-        self.export_fmt = QComboBox()
-        self.export_fmt.addItems(["none", "png", "jpg"])
-        self.export_fmt.setStyleSheet(f"background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 4px;")
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        buttons.setStyleSheet(f"QPushButton {{ background-color: {Config.COLOR_BG}; border: 1px solid {Config.COLOR_BORDER_SUBTLE}; padding: 6px; }}")
-
-        layout = QFormLayout(self)
-        layout.addRow("Scan Mode:", self.scan_mode)
-        layout.addRow("Export Format:", self.export_fmt)
-        layout.addWidget(buttons)
-
-    def get_results(self):
-        return self.scan_mode.currentText(), self.export_fmt.currentText()
