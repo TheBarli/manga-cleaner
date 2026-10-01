@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QTimer
 import numpy as np
 from src.utils.paths import Paths
 from src.utils.config import Config
+from src.utils.preferences import UserPrefs
 
 
 #/////////////////////////////////#
@@ -142,6 +143,108 @@ class WelcomeOverlay(QFrame):
 
 
 #/////////////////////////////////#
+#       NAVIGATOR MINIMAP         #
+#/////////////////////////////////#
+
+class MinimapWidget(QFrame):
+    """
+    Interactive floating minimap/navigator overlay for MangaCanvas.
+    Shows full image thumbnail with a highlighted viewport rectangle indicating
+    the current visible region. Clicking/dragging navigates the canvas viewport.
+    """
+    pan_requested = Signal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("MinimapWidget")
+        self.setFixedSize(140, 180)
+        self.setStyleSheet("""
+            QFrame#MinimapWidget {
+                background-color: rgba(26, 26, 30, 220);
+                border: 1px solid #4a4a52;
+                border-radius: 6px;
+            }
+        """)
+        self.thumbnail_pixmap = None
+        self.viewport_rect = QRectF()
+        self.is_dragging = False
+        self.hide()
+
+    def set_image(self, pixmap: QPixmap):
+        if pixmap and not pixmap.isNull():
+            avail_w = self.width() - 16
+            avail_h = self.height() - 16
+            self.thumbnail_pixmap = pixmap.scaled(avail_w, avail_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        else:
+            self.thumbnail_pixmap = None
+        self.update()
+
+    def set_viewport_rect(self, norm_rect: QRectF):
+        self.viewport_rect = norm_rect
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        if not self.thumbnail_pixmap:
+            return
+
+        tx = (self.width() - self.thumbnail_pixmap.width()) // 2
+        ty = (self.height() - self.thumbnail_pixmap.height()) // 2
+        painter.drawPixmap(tx, ty, self.thumbnail_pixmap)
+
+        tw = self.thumbnail_pixmap.width()
+        th = self.thumbnail_pixmap.height()
+
+        vx = tx + self.viewport_rect.x() * tw
+        vy = ty + self.viewport_rect.y() * th
+        vw = max(4.0, min(float(tw), self.viewport_rect.width() * tw))
+        vh = max(4.0, min(float(th), self.viewport_rect.height() * th))
+
+        vp_rect = QRectF(vx, vy, vw, vh)
+
+        painter.setBrush(QBrush(QColor(200, 110, 0, 45)))
+        painter.setPen(QPen(QColor(200, 110, 0, 220), 1.5))
+        painter.drawRect(vp_rect)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.thumbnail_pixmap:
+            self.is_dragging = True
+            self._handle_mouse_nav(event.pos())
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging and self.thumbnail_pixmap:
+            self._handle_mouse_nav(event.pos())
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.is_dragging:
+            self.is_dragging = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def _handle_mouse_nav(self, pos):
+        if not self.thumbnail_pixmap:
+            return
+        tx = (self.width() - self.thumbnail_pixmap.width()) // 2
+        ty = (self.height() - self.thumbnail_pixmap.height()) // 2
+        tw = self.thumbnail_pixmap.width()
+        th = self.thumbnail_pixmap.height()
+
+        rel_x = max(0.0, min(1.0, (pos.x() - tx) / max(1, tw)))
+        rel_y = max(0.0, min(1.0, (pos.y() - ty) / max(1, th)))
+        self.pan_requested.emit(rel_x, rel_y)
+
+
+#/////////////////////////////////#
 #   MULTI-TOOL CANVAS ENGINE      #
 #/////////////////////////////////#
 
@@ -259,6 +362,13 @@ class MangaCanvas(QGraphicsView):
         self.welcome_overlay.open_folder_requested.connect(self.open_folder_requested.emit)
         self.welcome_overlay.show()
 
+        # --- NAVIGATOR MINIMAP OVERLAY ---
+        self.minimap = MinimapWidget(self)
+        self.minimap.pan_requested.connect(self._center_on_normalized)
+        self.is_minimap_enabled = UserPrefs.load("show_minimap", True, type=bool)
+        self.horizontalScrollBar().valueChanged.connect(lambda _: self.update_minimap())
+        self.verticalScrollBar().valueChanged.connect(lambda _: self.update_minimap())
+
     def show_hud(self, text: str, duration: int = 800):
         """Displays transient HUD indicator centered near bottom of canvas"""
         self.hud_label.setText(text)
@@ -288,6 +398,9 @@ class MangaCanvas(QGraphicsView):
             self.hud_label.move((self.width() - self.hud_label.width()) // 2, self.height() - self.hud_label.height() - 25)
         if hasattr(self, 'welcome_overlay') and self.welcome_overlay.isVisible():
             self.center_welcome_overlay()
+        if hasattr(self, 'minimap'):
+            self.minimap.move(self.width() - self.minimap.width() - 16, self.height() - self.minimap.height() - 16)
+            self.update_minimap()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -436,6 +549,9 @@ class MangaCanvas(QGraphicsView):
         self.mask.fill(Qt.transparent)
         self.update_mask_display()
         self.scene.setSceneRect(0, 0, w, h)
+        if hasattr(self, 'minimap'):
+            self.minimap.set_image(self.image_item.pixmap())
+            self.update_minimap()
 
     def clear_image(self):
         """Clears current image and displays the welcome overlay."""
@@ -444,6 +560,9 @@ class MangaCanvas(QGraphicsView):
         self.image_item.setPixmap(QPixmap())
         self.mask_item.setPixmap(QPixmap())
         self.cursor_item.hide()
+        if hasattr(self, 'minimap'):
+            self.minimap.set_image(None)
+            self.minimap.hide()
         if hasattr(self, 'welcome_overlay') and self.welcome_overlay:
             self.welcome_overlay.show()
             self.center_welcome_overlay()
@@ -806,6 +925,54 @@ class MangaCanvas(QGraphicsView):
         menu = self.create_context_menu()
         menu.exec(event.globalPos())
         event.accept()
+
+    def update_minimap(self):
+        if not hasattr(self, 'minimap') or not getattr(self, 'is_minimap_enabled', True):
+            if hasattr(self, 'minimap'):
+                self.minimap.hide()
+            return
+
+        if self.cv_img is None:
+            self.minimap.hide()
+            return
+
+        h, w = self.cv_img.shape[:2]
+        if w <= 0 or h <= 0:
+            self.minimap.hide()
+            return
+
+        vp_rect = self.mapToScene(self.viewport().rect()).boundingRect()
+        norm_x = vp_rect.x() / w
+        norm_y = vp_rect.y() / h
+        norm_w = vp_rect.width() / w
+        norm_h = vp_rect.height() / h
+
+        norm_rect = QRectF(norm_x, norm_y, norm_w, norm_h)
+        self.minimap.set_viewport_rect(norm_rect)
+        self.minimap.move(self.width() - self.minimap.width() - 16, self.height() - self.minimap.height() - 16)
+        self.minimap.show()
+
+    def _center_on_normalized(self, norm_x: float, norm_y: float):
+        if self.cv_img is None:
+            return
+        h, w = self.cv_img.shape[:2]
+        scene_x = norm_x * w
+        scene_y = norm_y * h
+        self.centerOn(scene_x, scene_y)
+        self.update_minimap()
+
+    def toggle_minimap(self):
+        self.is_minimap_enabled = not getattr(self, 'is_minimap_enabled', True)
+        UserPrefs.save("show_minimap", self.is_minimap_enabled)
+        if self.is_minimap_enabled:
+            self.update_minimap()
+            self.show_hud("Minimap: Shown")
+        else:
+            self.minimap.hide()
+            self.show_hud("Minimap: Hidden")
+        top_w = self.window()
+        if hasattr(top_w, 'act_minimap'):
+            top_w.act_minimap.setChecked(self.is_minimap_enabled)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

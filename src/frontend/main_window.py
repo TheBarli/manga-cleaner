@@ -475,6 +475,9 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Flip View Horizontal", self.canvas.toggle_flip_horizontal, QKeySequence("H"))
         view_menu.addAction("Toggle Quick Mask", self.canvas.toggle_quick_mask, QKeySequence("Q"))
         view_menu.addAction("Cycle Mask Color", self.canvas.cycle_mask_color, QKeySequence("Ctrl+M"))
+        self.act_minimap = view_menu.addAction("Show Navigator Minimap", self.canvas.toggle_minimap, QKeySequence("Ctrl+N"))
+        self.act_minimap.setCheckable(True)
+        self.act_minimap.setChecked(getattr(self.canvas, 'is_minimap_enabled', True))
         view_menu.addSeparator()
 
         # Theme Submenu
