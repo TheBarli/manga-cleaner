@@ -4,6 +4,7 @@ from PySide6.QtCore import QObject, Signal
 from src.utils.config import Config
 from src.utils.paths import Paths
 from src.utils.logger import logger
+from src.utils.image_io import safe_imwrite
 
 #/////////////////////////////////#
 #    BATCH PROCESSING CONTROLLER  #
@@ -58,7 +59,7 @@ class BatchEngine(QObject):
         else:
             out_bgr = cv2.cvtColor(cv_img, cv2.COLOR_RGB2BGR)
 
-        cv2.imwrite(save_path, out_bgr)
+        safe_imwrite(save_path, out_bgr)
         
         logger.info(f"[+] Successfully Saved Cleaned: {filename}")
         self.current_index += 1

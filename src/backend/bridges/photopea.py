@@ -9,6 +9,7 @@ import socketserver
 import urllib.parse
 import shutil
 from src.utils.logger import logger
+from src.utils.image_io import safe_imwrite
 
 #/////////////////////////////////#
 #     PHOTOPEA WEB API BRIDGE     #
@@ -136,8 +137,8 @@ class PhotopeaBridge:
                 orig_name = "Image.png"
                 clean_name = "Image_cleaned.png"
 
-            cv2.imwrite(os.path.join(PhotopeaBridge._session_dir, orig_name), orig_bgr)
-            cv2.imwrite(os.path.join(PhotopeaBridge._session_dir, clean_name), clean_bgr)
+            safe_imwrite(os.path.join(PhotopeaBridge._session_dir, orig_name), orig_bgr)
+            safe_imwrite(os.path.join(PhotopeaBridge._session_dir, clean_name), clean_bgr)
 
             v_orig = urllib.parse.quote(orig_name)
             v_clean = urllib.parse.quote(clean_name)

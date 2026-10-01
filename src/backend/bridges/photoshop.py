@@ -3,6 +3,7 @@ import cv2
 import tempfile
 import numpy as np
 from src.utils.logger import logger
+from src.utils.image_io import safe_imwrite
 
 #/////////////////////////////////#
 #     PHOTOSHOP COM INTEROP       #
@@ -61,14 +62,14 @@ class PhotoshopBridge:
             
             # Save temporary transfer images
             if len(original_rgb.shape) == 3 and original_rgb.shape[2] == 4:
-                cv2.imwrite(orig_file, cv2.cvtColor(original_rgb, cv2.COLOR_RGBA2BGRA))
+                safe_imwrite(orig_file, cv2.cvtColor(original_rgb, cv2.COLOR_RGBA2BGRA))
             else:
-                cv2.imwrite(orig_file, cv2.cvtColor(original_rgb, cv2.COLOR_RGB2BGR))
+                safe_imwrite(orig_file, cv2.cvtColor(original_rgb, cv2.COLOR_RGB2BGR))
 
             if len(cleaned_rgb.shape) == 3 and cleaned_rgb.shape[2] == 4:
-                cv2.imwrite(clean_file, cv2.cvtColor(cleaned_rgb, cv2.COLOR_RGBA2BGRA))
+                safe_imwrite(clean_file, cv2.cvtColor(cleaned_rgb, cv2.COLOR_RGBA2BGRA))
             else:
-                cv2.imwrite(clean_file, cv2.cvtColor(cleaned_rgb, cv2.COLOR_RGB2BGR))
+                safe_imwrite(clean_file, cv2.cvtColor(cleaned_rgb, cv2.COLOR_RGB2BGR))
 
             # Open Original Document
             orig_doc = ps.Open(orig_file)
