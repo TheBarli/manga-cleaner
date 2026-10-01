@@ -236,6 +236,8 @@ class SessionManager:
             session = self.image_sessions[path_real]
             self.image_sessions.move_to_end(path_real)
             self.window.history = session["history"]
+            self.window.history.on_change = self.window.update_history_ui
+            self.window.update_history_ui()
             self.window.canvas.set_image(session["img"], orig_img=session.get("orig"))
             self.window.canvas.mask = session["mask"].copy()
             self.window.canvas.update_mask_display()
@@ -248,7 +250,8 @@ class SessionManager:
                 elif len(img.shape) == 3 and img.shape[2] == 4: img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
                 else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-                self.window.history = HistoryManager(Config.MAX_HISTORY)
+                self.window.history = HistoryManager(Config.MAX_HISTORY, on_change=self.window.update_history_ui)
+                self.window.update_history_ui()
                 self.window.canvas.set_image(img, orig_img=img)
                 
                 self.image_sessions[path_real] = {

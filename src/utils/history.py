@@ -13,10 +13,18 @@ class HistoryManager:
     Ctrl+Z steps backward through this timeline, and Ctrl+Shift+Z / Ctrl+Y steps forward.
     Mask snapshots are zlib-compressed to minimize memory footprint.
     """
-    def __init__(self, limit=30):
+    def __init__(self, limit=30, on_change=None):
         self.limit = limit
         self.undo_stack = []
         self.redo_stack = []
+        self.on_change = on_change
+
+    def _notify_change(self):
+        if callable(self.on_change):
+            try:
+                self.on_change()
+            except Exception:
+                pass
 
     @staticmethod
     def _compress_mask(mask_qimage):
@@ -54,6 +62,7 @@ class HistoryManager:
         """Clears both undo and redo stacks."""
         self.undo_stack.clear()
         self.redo_stack.clear()
+        self._notify_change()
 
     def push_mask_state(self, mask_qimage):
         """Pushes a compressed mask snapshot to the unified undo stack before a modification."""
@@ -66,6 +75,7 @@ class HistoryManager:
         self.redo_stack.clear()
         if len(self.undo_stack) > self.limit:
             self.undo_stack.pop(0)
+        self._notify_change()
 
     def push_image_clean(self, patches, result_img, saved_mask=None):
         """
@@ -87,6 +97,7 @@ class HistoryManager:
         self.redo_stack.clear()
         if len(self.undo_stack) > self.limit:
             self.undo_stack.pop(0)
+        self._notify_change()
 
     def push_image_action(self, x, y, patch):
         """Legacy compatibility wrapper for single patch push."""
@@ -99,6 +110,7 @@ class HistoryManager:
         self.redo_stack.clear()
         if len(self.undo_stack) > self.limit:
             self.undo_stack.pop(0)
+        self._notify_change()
 
     def undo(self, current_img, current_mask):
         """
@@ -110,6 +122,7 @@ class HistoryManager:
 
         action = self.undo_stack.pop()
         act_type = action["type"]
+        res = None
 
         if act_type == "mask":
             if current_mask is not None:
@@ -117,7 +130,7 @@ class HistoryManager:
                     "type": "mask",
                     "mask": self._compress_mask(current_mask)
                 })
-            return {
+            res = {
                 "type": "mask",
                 "mask": self._decompress_mask(action["mask"])
             }
@@ -129,7 +142,7 @@ class HistoryManager:
                     h, w = undo_patch.shape[:2]
                     current_img[y:y+h, x:x+w] = undo_patch
 
-            return {
+            res = {
                 "type": "image",
                 "img": current_img,
                 "restore_mask": self._decompress_mask(action.get("saved_mask"))
@@ -147,13 +160,14 @@ class HistoryManager:
                     "patch": redo_patch
                 })
                 current_img[y:y+h, x:x+w] = patch
-            return {
+            res = {
                 "type": "image",
                 "img": current_img,
                 "restore_mask": None
             }
 
-        return None
+        self._notify_change()
+        return res
 
     def redo(self, current_img, current_mask):
         """
@@ -165,6 +179,7 @@ class HistoryManager:
 
         action = self.redo_stack.pop()
         act_type = action["type"]
+        res = None
 
         if act_type == "mask":
             if current_mask is not None:
@@ -172,7 +187,7 @@ class HistoryManager:
                     "type": "mask",
                     "mask": self._compress_mask(current_mask)
                 })
-            return {
+            res = {
                 "type": "mask",
                 "mask": self._decompress_mask(action["mask"])
             }
@@ -184,7 +199,7 @@ class HistoryManager:
                     h, w = redo_patch.shape[:2]
                     current_img[y:y+h, x:x+w] = redo_patch
 
-            return {
+            res = {
                 "type": "image",
                 "img": current_img,
                 "clear_mask": True
@@ -202,13 +217,14 @@ class HistoryManager:
                     "patch": undo_patch
                 })
                 current_img[y:y+h, x:x+w] = patch
-            return {
+            res = {
                 "type": "image",
                 "img": current_img,
                 "clear_mask": True
             }
 
-        return None
+        self._notify_change()
+        return res
 
     # Legacy method compatibility wrappers
     def pop_image_undo(self, current_img):

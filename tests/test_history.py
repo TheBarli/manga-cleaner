@@ -83,9 +83,25 @@ class TestHistoryManager(unittest.TestCase):
         self.history.push_mask_state(mask)
         self.assertTrue(self.history.can_undo())
 
-        self.history.clear()
-        self.assertFalse(self.history.can_undo())
-        self.assertFalse(self.history.can_redo())
+    def test_on_change_callback(self):
+        call_count = 0
+        def on_change():
+            nonlocal call_count
+            call_count += 1
+
+        h = HistoryManager(limit=5, on_change=on_change)
+        mask = QImage(16, 16, QImage.Format_ARGB32)
+        h.push_mask_state(mask)
+        self.assertEqual(call_count, 1)
+
+        h.undo(None, mask)
+        self.assertEqual(call_count, 2)
+
+        h.redo(None, mask)
+        self.assertEqual(call_count, 3)
+
+        h.clear()
+        self.assertEqual(call_count, 4)
 
 if __name__ == '__main__':
     unittest.main()

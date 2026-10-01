@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
         self.resize(1500, 900)
 
         self.monitor = SystemMonitor()
-        self.history = HistoryManager(Config.MAX_HISTORY)
+        self.history = HistoryManager(Config.MAX_HISTORY, on_change=self.update_history_ui)
 
         # Domain Controllers
         self.session_manager = SessionManager(self)
@@ -361,6 +361,10 @@ class MainWindow(QMainWindow):
         self.status_tool_lbl = QLabel("Tool: Move")
         self.status_tool_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
 
+        self.status_history_lbl = QLabel(f"History: 0/{Config.MAX_HISTORY}")
+        self.status_history_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
+        self.status_history_lbl.setToolTip("Unified Undo/Redo Action Stack Depth")
+
         self.status_coord_lbl = QLabel("X: -  Y: -")
         self.status_coord_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
 
@@ -389,6 +393,7 @@ class MainWindow(QMainWindow):
         self.status_zoom_btn.setMenu(zoom_menu)
 
         self.status_bar.addWidget(self.status_tool_lbl)
+        self.status_bar.addWidget(self.status_history_lbl)
         self.status_bar.addPermanentWidget(self.status_coord_lbl)
         self.status_bar.addPermanentWidget(self.status_dim_lbl)
         self.status_bar.addPermanentWidget(self.status_zoom_btn)
@@ -401,6 +406,7 @@ class MainWindow(QMainWindow):
 
         # Standard Studio Menu Bar
         self.setup_menu_bar()
+        self.update_history_ui()
         self.canvas.setFocus()
 
         # Restore window geometry & state
@@ -429,10 +435,10 @@ class MainWindow(QMainWindow):
 
         # Edit Menu
         edit_menu = menu_bar.addMenu("&Edit")
-        act_undo = edit_menu.addAction("Undo", self.on_undo)
-        act_undo.setShortcuts([QKeySequence("Ctrl+Z"), QKeySequence("Alt+Z")])
-        act_redo = edit_menu.addAction("Redo", self.on_redo)
-        act_redo.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y"), QKeySequence("Alt+Shift+Z")])
+        self.act_undo = edit_menu.addAction("Undo", self.on_undo)
+        self.act_undo.setShortcuts([QKeySequence("Ctrl+Z"), QKeySequence("Alt+Z")])
+        self.act_redo = edit_menu.addAction("Redo", self.on_redo)
+        self.act_redo.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y"), QKeySequence("Alt+Shift+Z")])
         edit_menu.addSeparator()
         act_clear = edit_menu.addAction("Deselect / Clear Mask", self.canvas.clear_mask)
         act_clear.setShortcuts([QKeySequence("Ctrl+D"), QKeySequence("Esc")])
@@ -533,6 +539,19 @@ class MainWindow(QMainWindow):
 
     def on_redo_mask(self):
         self.pipeline_controller.on_redo_mask()
+
+    def update_history_ui(self):
+        can_u = self.history.can_undo() if hasattr(self, 'history') and self.history else False
+        can_r = self.history.can_redo() if hasattr(self, 'history') and self.history else False
+        count = len(self.history.undo_stack) if hasattr(self, 'history') and self.history else 0
+        limit = self.history.limit if hasattr(self, 'history') and self.history else Config.MAX_HISTORY
+
+        if hasattr(self, 'act_undo'):
+            self.act_undo.setEnabled(can_u)
+        if hasattr(self, 'act_redo'):
+            self.act_redo.setEnabled(can_r)
+        if hasattr(self, 'status_history_lbl'):
+            self.status_history_lbl.setText(f"History: {count}/{limit}")
 
     #/////////////////////////////////#
     #   DELEGATES: BATCH CONTROLLER   #
