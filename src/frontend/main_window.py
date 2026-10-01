@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter,
-                             QMenu, QProgressBar, QCheckBox)
+                             QMenu, QProgressBar, QCheckBox, QMessageBox)
 from PySide6.QtGui import QKeySequence
 from PySide6.QtCore import Qt, QTimer
 from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
@@ -570,3 +570,39 @@ class MainWindow(QMainWindow):
         ram, gpu = self.monitor.get_stats()
         self.hw_mon.lbl.setText(f"{'GPU' if gpu else 'CPU'} | RAM: {ram}MB")
         self.hw_mon.bar.setValue(min(ram // 40, 100))
+
+    def closeEvent(self, event):
+        """Ensures clean shutdown of background workers, threads, timers, and process pools."""
+        if self.is_batching or self.worker_thread is not None:
+            reply = QMessageBox.question(
+                self,
+                "Confirm Exit",
+                "AI processing or batch operation is currently active.\nDo you want to stop and exit anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+
+        # Stop telemetry polling
+        if hasattr(self, 'timer') and self.timer.isActive():
+            self.timer.stop()
+
+        # Stop batching state
+        if hasattr(self, 'batch_controller'):
+            self.batch_controller.is_batching = False
+
+        # Cleanly stop QThread worker
+        if hasattr(self, 'pipeline_controller') and self.pipeline_controller.worker_thread:
+            self.pipeline_controller.stop_thread()
+
+        # Cleanly shut down ProcessPoolExecutor
+        try:
+            from src.backend.workers import shutdown_pool
+            shutdown_pool()
+        except Exception as e:
+            logger.warning(f"Error during pool shutdown: {e}")
+
+        logger.info("--- STUDIO SHUTDOWN COMPLETE ---")
+        super().closeEvent(event)

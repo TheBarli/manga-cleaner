@@ -16,6 +16,18 @@ def get_pool():
         _pool = ProcessPoolExecutor(max_workers=1)
     return _pool
 
+def shutdown_pool():
+    """Terminates and shuts down the background ProcessPoolExecutor cleanly."""
+    global _pool
+    if _pool is not None:
+        try:
+            logger.info("[-] Shutting down background ProcessPoolExecutor...")
+            _pool.shutdown(wait=False, cancel_futures=True)
+        except Exception as e:
+            logger.warning(f"Error shutting down process pool: {e}")
+        finally:
+            _pool = None
+
 # Top-level functions so Windows can send them to the background process
 def _run_ocr_process(cv_img, language):
     return ImageProcessor.run_ocr_logic(cv_img, language)
