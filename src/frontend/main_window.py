@@ -525,6 +525,9 @@ class MainWindow(QMainWindow):
     def finalize_batch(self):
         self.batch_controller.finalize_batch()
 
+    def cancel_batch(self):
+        self.batch_controller.cancel_batch()
+
     #/////////////////////////////////#
     #  DELEGATES: SESSION MANAGER     #
     #/////////////////////////////////#

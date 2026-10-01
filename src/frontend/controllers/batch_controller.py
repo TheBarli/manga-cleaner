@@ -24,8 +24,24 @@ class BatchController:
         self.is_batching = False
         self.batch_scan_type = "ocr"
 
+    def _reset_batch_button(self):
+        """Restores batch action button to default state."""
+        self.window.btn_batch.setText("RUN BATCH PROCESS")
+        self.window.btn_batch.setStyleSheet("")
+        self.window.btn_batch.setToolTip("Run Batch Clean")
+
+    def _set_batching_button(self):
+        """Sets batch action button to active cancellation state."""
+        self.window.btn_batch.setText("CANCEL BATCH")
+        self.window.btn_batch.setStyleSheet("background-color: #dc2626; color: #ffffff; font-weight: bold;")
+        self.window.btn_batch.setToolTip("Cancel running batch process")
+
     def on_start_batch(self):
         """Opens batch setup dialog and initializes batch processing for selected or all files."""
+        if self.is_batching:
+            self.cancel_batch()
+            return
+
         if self.window.file_list.count() == 0:
             return
 
@@ -57,12 +73,16 @@ class BatchController:
 
         self.batch_engine.initialize_batch(paths, fmt)
         self.is_batching = True
+        self._set_batching_button()
         self.window.pipeline_controller.total_lama_tasks += len(paths)
         self.step_batch()
         self.window.pipeline_controller._check_lock_state()
 
     def step_batch(self):
         """Pulls the next file in batch sequence and triggers the required scan/clean/save action."""
+        if not self.is_batching:
+            return
+
         path = self.batch_engine.get_next()
         if path:
             if path not in self.window.image_sessions:
@@ -136,6 +156,9 @@ class BatchController:
 
     def handle_task_finished(self, task: str, source_path: str, is_active: bool):
         """Advances batch processing upon AI task completion."""
+        if not self.is_batching:
+            return
+
         if task == "clean":
             final_img = self.window.canvas.cv_img if is_active else self.window.image_sessions[source_path]["img"]
             is_last = self.batch_engine.save_current(final_img)
@@ -154,9 +177,31 @@ class BatchController:
             t_size = self.window.t_slider.slider.value() * 512
             self.window.pipeline_controller.enqueue_task("clean", source_path, img_cv.copy(), mask_gray, t_size)
 
+    def cancel_batch(self):
+        """Cancels running batch process, purges pending queue, and restores UI state."""
+        if not self.is_batching:
+            return
+
+        self.is_batching = False
+        self.batch_engine.files.clear()
+        self.batch_engine.current_index = 0
+
+        # Purge pending pipeline tasks
+        self.window.pipeline_controller.task_queue.clear()
+        self.window.pipeline_controller.total_lama_tasks = 0
+        self.window.pipeline_controller.completed_lama_tasks = 0
+        self.window.pipeline_controller.total_tasks = 0
+        self.window.pipeline_controller.completed_tasks = 0
+
+        self._reset_batch_button()
+        self.window.pipeline_controller._update_queue_ui()
+        self.window.pipeline_controller._check_lock_state()
+        self.window.show_toast("Batch process cancelled", "warning")
+
     def finalize_batch(self):
         """Completes the batch cycle and alerts the user."""
         self.is_batching = False
+        self._reset_batch_button()
         self.window.pipeline_controller._check_lock_state()
             
         if self.batch_engine.export_format == "none":
