@@ -64,6 +64,14 @@ class MainWindow(QMainWindow):
         self.session_manager.current_img_path = val
 
     @property
+    def max_cached_sessions(self):
+        return self.session_manager.max_cached_sessions
+
+    @max_cached_sessions.setter
+    def max_cached_sessions(self, val):
+        self.session_manager.set_max_cached_sessions(val)
+
+    @property
     def batch_engine(self):
         return self.batch_controller.batch_engine
 

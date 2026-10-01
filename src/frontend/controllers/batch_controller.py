@@ -83,6 +83,12 @@ class BatchController:
                         "history": HistoryManager(Config.MAX_HISTORY)
                     }
                     self.window.image_sessions[path]["mask"].fill(Qt.transparent)
+                    if hasattr(self.window.session_manager.image_sessions, 'move_to_end'):
+                        self.window.session_manager.image_sessions.move_to_end(path)
+                    self.window.session_manager._ensure_session_limit()
+            else:
+                if hasattr(self.window.session_manager.image_sessions, 'move_to_end'):
+                    self.window.session_manager.image_sessions.move_to_end(path)
 
             is_active = (path == self.window.current_img_path)
 
@@ -133,6 +139,7 @@ class BatchController:
         if task == "clean":
             final_img = self.window.canvas.cv_img if is_active else self.window.image_sessions[source_path]["img"]
             is_last = self.batch_engine.save_current(final_img)
+            self.window.session_manager._ensure_session_limit()
             if is_last:
                 self.finalize_batch()
             else:

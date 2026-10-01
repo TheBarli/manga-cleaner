@@ -39,6 +39,7 @@ class Config:
     
     DEFAULT_BRUSH_SIZE = 40
     MAX_HISTORY = 20
+    MAX_CACHED_SESSIONS = 15
     DEFAULT_TILE_WIDTH = 1024 
 
     _ID_FILE = os.path.join(Paths.CACHE, "batch_id.json")

@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+from collections import OrderedDict
 from enum import Enum, auto
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
@@ -32,9 +33,10 @@ class SessionManager:
 
     def __init__(self, window):
         self.window = window
-        self.image_sessions = {}
+        self.image_sessions = OrderedDict()
         self.page_states = {}
         self.current_img_path = None
+        self.max_cached_sessions = getattr(Config, "MAX_CACHED_SESSIONS", 15)
 
     def on_open_image(self):
         p, _ = QFileDialog.getOpenFileName(self.window, "Open Image", "", "Images (*.png *.jpg *.jpeg *.webp)")
@@ -166,6 +168,48 @@ class SessionManager:
                 self.page_states[self.current_img_path] = PageState.MODIFIED
                 self.window.file_list.update_item_state(self.current_img_path, "modified")
 
+    def set_max_cached_sessions(self, limit: int):
+        """Dynamically adjusts the maximum session limit and enforces eviction."""
+        self.max_cached_sessions = max(1, limit)
+        self._ensure_session_limit()
+
+    def _ensure_session_limit(self):
+        """Evicts least recently accessed sessions when exceeding max_cached_sessions (LRU)."""
+        if len(self.image_sessions) <= self.max_cached_sessions:
+            return
+
+        locked_paths = set()
+        if hasattr(self.window, 'pipeline_controller'):
+            locked_paths = self.window.pipeline_controller.get_locked_paths()
+
+        while len(self.image_sessions) > self.max_cached_sessions:
+            evicted = False
+
+            # Pass 1: Prioritize evicting UNMODIFIED or READY sessions in LRU order
+            for path in list(self.image_sessions.keys()):
+                if path == self.current_img_path or path in locked_paths:
+                    continue
+                state = self.page_states.get(path, PageState.UNMODIFIED)
+                if state in (PageState.UNMODIFIED, PageState.READY):
+                    del self.image_sessions[path]
+                    evicted = True
+                    logger.debug(f"Evicted clean session from memory cache: {os.path.basename(path)}")
+                    break
+
+            # Pass 2: If still over limit, evict oldest non-locked session
+            if not evicted:
+                for path in list(self.image_sessions.keys()):
+                    if path == self.current_img_path or path in locked_paths:
+                        continue
+                    del self.image_sessions[path]
+                    evicted = True
+                    logger.debug(f"Evicted session from memory cache: {os.path.basename(path)}")
+                    break
+
+            # If all sessions are locked or active, do not force evict
+            if not evicted:
+                break
+
     def on_file_clicked(self, it):
         path_real = it.data(Qt.UserRole)
         if path_real == self.current_img_path: return 
@@ -177,11 +221,14 @@ class SessionManager:
                 "mask": self.window.canvas.mask.copy(),
                 "history": self.window.history
             }
+            self.image_sessions.move_to_end(self.current_img_path)
+            self._ensure_session_limit()
 
         self.current_img_path = path_real
 
         if path_real in self.image_sessions:
             session = self.image_sessions[path_real]
+            self.image_sessions.move_to_end(path_real)
             self.window.history = session["history"]
             self.window.canvas.set_image(session["img"], orig_img=session.get("orig"))
             self.window.canvas.mask = session["mask"].copy()
@@ -204,6 +251,8 @@ class SessionManager:
                     "mask": self.window.canvas.mask.copy(),
                     "history": self.window.history
                 }
+                self.image_sessions.move_to_end(path_real)
+                self._ensure_session_limit()
             else:
                 self.window.show_toast(f"Corrupted or invalid image: {os.path.basename(path_real)}", "error")
                 logger.error(f"Failed to decode image: {path_real}")

@@ -23,8 +23,8 @@ class PipelineController:
         self.total_lama_tasks = 0
         self.completed_lama_tasks = 0
 
-    def _check_lock_state(self):
-        """Identifies ALL files currently being processed or waiting and globally updates UI."""
+    def get_locked_paths(self) -> set:
+        """Returns set of all file paths currently running or queued in AI pipeline or batch."""
         locked_paths = set()
         
         # 1. Grab file currently running in AI worker thread
@@ -42,6 +42,12 @@ class PipelineController:
             batch_eng = self.window.batch_engine
             for idx in range(batch_eng.current_index, len(batch_eng.files)):
                 locked_paths.add(batch_eng.files[idx])
+
+        return locked_paths
+
+    def _check_lock_state(self):
+        """Identifies ALL files currently being processed or waiting and globally updates UI."""
+        locked_paths = self.get_locked_paths()
 
         # 4. Globally update the FileList UI checkboxes and lock icons
         for i in range(self.window.file_list.count()):
