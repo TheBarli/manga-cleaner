@@ -223,6 +223,8 @@ class MainWindow(QMainWindow):
         self.canvas = MangaCanvas()
         self.canvas.mask_changed.connect(lambda: self.history.push_mask_state(self.canvas.mask))
         self.canvas.mask_changed.connect(self.mark_current_modified)
+        self.canvas.open_image_requested.connect(self.on_open_image)
+        self.canvas.open_folder_requested.connect(self.on_open_folder)
         
         self.rp = QFrame()
         self.rp.setObjectName("SidePanel")

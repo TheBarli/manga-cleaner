@@ -1,11 +1,145 @@
 import os
 import cv2
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
-                             QGraphicsPathItem, QGraphicsEllipseItem, QLabel)
+                             QGraphicsPathItem, QGraphicsEllipseItem, QLabel,
+                             QFrame, QVBoxLayout, QHBoxLayout, QPushButton)
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush, QPainterPath, QIcon, QCursor
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QTimer
 import numpy as np
 from src.utils.paths import Paths
+from src.utils.config import Config
+
+
+#/////////////////////////////////#
+#       WELCOME EMPTY STATE       #
+#/////////////////////////////////#
+
+class WelcomeOverlay(QFrame):
+    """Centered empty-state overlay displayed on the canvas when no image is loaded."""
+    open_image_requested = Signal()
+    open_folder_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("WelcomeOverlay")
+        self.setAcceptDrops(True)
+        
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(36, 28, 36, 28)
+        lay.setSpacing(12)
+        lay.setAlignment(Qt.AlignCenter)
+
+        # Title
+        title = QLabel("MANGA CLEANER STUDIO")
+        title.setObjectName("WelcomeTitle")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"color: {Config.COLOR_TEXT_PRIMARY}; font-size: 17px; font-weight: bold; letter-spacing: 1px;")
+
+        # Subtitle
+        subtitle = QLabel("AI Inpainting & Speech Bubble Cleaner")
+        subtitle.setObjectName("WelcomeSubtitle")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet(f"color: {Config.COLOR_ACCENT}; font-size: 11px; font-weight: bold; text-transform: uppercase;")
+
+        # Instructions
+        desc = QLabel("Drag & drop manga pages here\nor choose an option below to get started")
+        desc.setObjectName("WelcomeDesc")
+        desc.setAlignment(Qt.AlignCenter)
+        desc.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; font-size: 12px; line-height: 1.4;")
+
+        # Action Buttons
+        btn_lay = QHBoxLayout()
+        btn_lay.setSpacing(12)
+        btn_lay.setAlignment(Qt.AlignCenter)
+
+        self.btn_open_img = QPushButton("Open Image")
+        self.btn_open_img.setCursor(Qt.PointingHandCursor)
+        self.btn_open_img.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Config.COLOR_ACCENT};
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-weight: bold;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {Config.COLOR_ACCENT_HOVER};
+            }}
+            QPushButton:pressed {{
+                background-color: {Config.COLOR_ACCENT_ACTIVE};
+            }}
+        """)
+        self.btn_open_img.clicked.connect(self.open_image_requested.emit)
+
+        self.btn_open_folder = QPushButton("Import Folder")
+        self.btn_open_folder.setCursor(Qt.PointingHandCursor)
+        self.btn_open_folder.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Config.COLOR_BG_SURFACE};
+                color: {Config.COLOR_TEXT_PRIMARY};
+                border: 1px solid {Config.COLOR_BORDER_SUBTLE};
+                border-radius: 6px;
+                padding: 8px 18px;
+                font-weight: 500;
+                font-size: 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {Config.COLOR_BG_HOVER};
+                border-color: {Config.COLOR_ACCENT};
+            }}
+        """)
+        self.btn_open_folder.clicked.connect(self.open_folder_requested.emit)
+
+        btn_lay.addWidget(self.btn_open_img)
+        btn_lay.addWidget(self.btn_open_folder)
+
+        # Shortcuts hint
+        hints = QLabel("Ctrl+O: Open Image   ·   Ctrl+Shift+O: Open Folder   ·   F1: Help")
+        hints.setAlignment(Qt.AlignCenter)
+        hints.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px; margin-top: 4px;")
+
+        lay.addWidget(title)
+        lay.addWidget(subtitle)
+        lay.addSpacing(4)
+        lay.addWidget(desc)
+        lay.addSpacing(6)
+        lay.addLayout(btn_lay)
+        lay.addWidget(hints)
+
+        self.setStyleSheet(f"""
+            QFrame#WelcomeOverlay {{
+                background-color: rgba(30, 30, 30, 235);
+                border: 1px solid {Config.COLOR_BORDER_SUBTLE};
+                border-radius: 12px;
+            }}
+        """)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        paths = [
+            u.toLocalFile() for u in event.mimeData().urls()
+            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
+        ]
+        if paths and self.parent():
+            event.acceptProposedAction()
+            self.parent().images_dropped.emit(paths)
+        else:
+            event.ignore()
+
 
 #/////////////////////////////////#
 #   MULTI-TOOL CANVAS ENGINE      #
@@ -17,6 +151,8 @@ class MangaCanvas(QGraphicsView):
     mouse_moved = Signal(int, int)
     zoom_changed = Signal(int)
     images_dropped = Signal(list)
+    open_image_requested = Signal()
+    open_folder_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -117,6 +253,12 @@ class MangaCanvas(QGraphicsView):
         self.setMouseTracking(True)
         self.update_cursor_visuals()
 
+        # --- WELCOME EMPTY STATE OVERLAY ---
+        self.welcome_overlay = WelcomeOverlay(self)
+        self.welcome_overlay.open_image_requested.connect(self.open_image_requested.emit)
+        self.welcome_overlay.open_folder_requested.connect(self.open_folder_requested.emit)
+        self.welcome_overlay.show()
+
     def show_hud(self, text: str, duration: int = 800):
         """Displays transient HUD indicator centered near bottom of canvas"""
         self.hud_label.setText(text)
@@ -125,12 +267,51 @@ class MangaCanvas(QGraphicsView):
         self.hud_label.show()
         self.hud_timer.start(duration)
 
+    def center_welcome_overlay(self):
+        """Centers the welcome card in the visible viewport."""
+        if hasattr(self, 'welcome_overlay') and self.welcome_overlay:
+            self.welcome_overlay.adjustSize()
+            x = max(10, (self.width() - self.welcome_overlay.width()) // 2)
+            y = max(10, (self.height() - self.welcome_overlay.height()) // 2)
+            self.welcome_overlay.move(x, y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, 'welcome_overlay') and self.welcome_overlay.isVisible():
+            self.center_welcome_overlay()
+
     def resizeEvent(self, event):
-        """Keep the lock overlay and HUD positioned appropriately"""
+        """Keep the lock overlay, HUD, and welcome overlay positioned appropriately"""
         super().resizeEvent(event)
         self.lock_overlay.move(self.width() - self.lock_overlay.width() - 20, 20)
         if self.hud_label.isVisible():
             self.hud_label.move((self.width() - self.hud_label.width()) // 2, self.height() - self.hud_label.height() - 25)
+        if hasattr(self, 'welcome_overlay') and self.welcome_overlay.isVisible():
+            self.center_welcome_overlay()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
+        paths = [
+            u.toLocalFile() for u in event.mimeData().urls()
+            if u.isLocalFile() and u.toLocalFile().lower().endswith(valid_exts)
+        ]
+        if paths:
+            event.acceptProposedAction()
+            self.images_dropped.emit(paths)
+        else:
+            event.ignore()
 
     def set_locked(self, locked: bool):
         """Toggles the lock state and manages the visual cursor & overlay"""
@@ -232,6 +413,9 @@ class MangaCanvas(QGraphicsView):
 
     def set_image(self, cv_img, orig_img=None):
         self.cv_img = cv_img
+        if hasattr(self, 'welcome_overlay') and self.welcome_overlay:
+            self.welcome_overlay.hide()
+
         if orig_img is not None:
             self.orig_img = orig_img.copy()
         elif self.orig_img is None:
@@ -252,6 +436,17 @@ class MangaCanvas(QGraphicsView):
         self.mask.fill(Qt.transparent)
         self.update_mask_display()
         self.scene.setSceneRect(0, 0, w, h)
+
+    def clear_image(self):
+        """Clears current image and displays the welcome overlay."""
+        self.cv_img = None
+        self.orig_img = None
+        self.image_item.setPixmap(QPixmap())
+        self.mask_item.setPixmap(QPixmap())
+        self.cursor_item.hide()
+        if hasattr(self, 'welcome_overlay') and self.welcome_overlay:
+            self.welcome_overlay.show()
+            self.center_welcome_overlay()
 
     def update_mask_display(self):
         if self.mask: self.mask_item.setPixmap(QPixmap.fromImage(self.mask))
