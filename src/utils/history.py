@@ -1,3 +1,6 @@
+import zlib
+from PySide6.QtGui import QImage
+
 #/////////////////////////////////#
 #   UNIFIED CHRONOLOGICAL STACK   #
 #/////////////////////////////////#
@@ -8,11 +11,38 @@ class HistoryManager:
     Every operation (drawing strokes, bucket fills, OCR scans, and AI clean inpainting)
     is recorded in a single ordered timeline.
     Ctrl+Z steps backward through this timeline, and Ctrl+Shift+Z / Ctrl+Y steps forward.
+    Mask snapshots are zlib-compressed to minimize memory footprint.
     """
     def __init__(self, limit=30):
         self.limit = limit
         self.undo_stack = []
         self.redo_stack = []
+
+    @staticmethod
+    def _compress_mask(mask_qimage):
+        """Compresses a QImage mask using zlib for token-efficient in-memory history storage."""
+        if mask_qimage is None:
+            return None
+        if isinstance(mask_qimage, dict):
+            return mask_qimage
+        raw = bytes(mask_qimage.bits())
+        return {
+            "data": zlib.compress(raw, level=1),
+            "w": mask_qimage.width(),
+            "h": mask_qimage.height(),
+            "bpl": mask_qimage.bytesPerLine(),
+            "fmt": mask_qimage.format()
+        }
+
+    @staticmethod
+    def _decompress_mask(record):
+        """Decompresses a zlib-compressed mask record back into a standalone QImage."""
+        if record is None:
+            return None
+        if isinstance(record, QImage):
+            return record.copy()
+        raw = zlib.decompress(record["data"])
+        return QImage(raw, record["w"], record["h"], record["bpl"], record["fmt"]).copy()
 
     def can_undo(self) -> bool:
         return len(self.undo_stack) > 0
@@ -21,12 +51,12 @@ class HistoryManager:
         return len(self.redo_stack) > 0
 
     def push_mask_state(self, mask_qimage):
-        """Pushes a mask snapshot to the unified undo stack before a modification."""
+        """Pushes a compressed mask snapshot to the unified undo stack before a modification."""
         if mask_qimage is None:
             return
         self.undo_stack.append({
             "type": "mask",
-            "mask": mask_qimage.copy()
+            "mask": self._compress_mask(mask_qimage)
         })
         self.redo_stack.clear()
         if len(self.undo_stack) > self.limit:
@@ -47,7 +77,7 @@ class HistoryManager:
         self.undo_stack.append({
             "type": "image",
             "patches": patch_records,
-            "saved_mask": saved_mask.copy() if saved_mask else None
+            "saved_mask": self._compress_mask(saved_mask) if saved_mask else None
         })
         self.redo_stack.clear()
         if len(self.undo_stack) > self.limit:
@@ -80,11 +110,11 @@ class HistoryManager:
             if current_mask is not None:
                 self.redo_stack.append({
                     "type": "mask",
-                    "mask": current_mask.copy()
+                    "mask": self._compress_mask(current_mask)
                 })
             return {
                 "type": "mask",
-                "mask": action["mask"]
+                "mask": self._decompress_mask(action["mask"])
             }
 
         elif act_type == "image":
@@ -97,7 +127,7 @@ class HistoryManager:
             return {
                 "type": "image",
                 "img": current_img,
-                "restore_mask": action.get("saved_mask")
+                "restore_mask": self._decompress_mask(action.get("saved_mask"))
             }
 
         elif act_type == "image_legacy":
@@ -135,11 +165,11 @@ class HistoryManager:
             if current_mask is not None:
                 self.undo_stack.append({
                     "type": "mask",
-                    "mask": current_mask.copy()
+                    "mask": self._compress_mask(current_mask)
                 })
             return {
                 "type": "mask",
-                "mask": action["mask"]
+                "mask": self._decompress_mask(action["mask"])
             }
 
         elif act_type == "image":
