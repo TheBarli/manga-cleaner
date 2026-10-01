@@ -8,18 +8,18 @@ import os
 class SystemMonitor:
     def __init__(self):
         self.process = psutil.Process(os.getpid())
+        try:
+            import onnxruntime as ort
+            providers = ort.get_available_providers()
+            self._gpu_active = 1 if 'CUDAExecutionProvider' in providers else 0
+        except Exception:
+            self._gpu_active = 0
 
     def get_stats(self):
         """Returns (app_ram_mb, is_gpu_active)"""
-        import onnxruntime as ort
-
         ram_bytes = self.process.memory_info().rss
         ram_mb = int(ram_bytes / (1024 * 1024))
-        
-        providers = ort.get_available_providers()
-        gpu_active = 1 if 'CUDAExecutionProvider' in providers else 0
-        
-        return ram_mb, gpu_active
+        return ram_mb, self._gpu_active
 
     @staticmethod
     def get_detailed_specs():
