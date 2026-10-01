@@ -254,6 +254,7 @@ class MainWindow(QMainWindow):
 
         # Standard Studio Menu Bar
         self.setup_menu_bar()
+        self.canvas.setFocus()
 
     def setup_menu_bar(self):
         menu_bar = self.menuBar()
@@ -270,19 +271,25 @@ class MainWindow(QMainWindow):
 
         # Edit Menu
         edit_menu = menu_bar.addMenu("&Edit")
-        edit_menu.addAction("Undo", self.on_undo, QKeySequence("Ctrl+Z"))
-        edit_menu.addAction("Redo", self.on_redo, QKeySequence("Ctrl+Shift+Z"))
+        act_undo = edit_menu.addAction("Undo", self.on_undo)
+        act_undo.setShortcuts([QKeySequence("Ctrl+Z"), QKeySequence("Alt+Z")])
+        act_redo = edit_menu.addAction("Redo", self.on_redo)
+        act_redo.setShortcuts([QKeySequence("Ctrl+Shift+Z"), QKeySequence("Ctrl+Y"), QKeySequence("Alt+Shift+Z")])
         edit_menu.addSeparator()
-        edit_menu.addAction("Deselect / Clear Mask", self.canvas.clear_mask, QKeySequence("Ctrl+D"))
+        act_clear = edit_menu.addAction("Deselect / Clear Mask", self.canvas.clear_mask)
+        act_clear.setShortcuts([QKeySequence("Ctrl+D"), QKeySequence("Esc")])
         edit_menu.addAction("Invert Mask", self.canvas.invert_mask, QKeySequence("Ctrl+Shift+I"))
-        edit_menu.addAction("Expand Mask (+3px)", lambda: self.canvas.dilate_mask(3), QKeySequence("Shift+>"))
-        edit_menu.addAction("Contract Mask (-3px)", lambda: self.canvas.erode_mask(3), QKeySequence("Shift+<"))
+        act_expand = edit_menu.addAction("Expand Mask (+3px)", lambda: self.canvas.dilate_mask(3))
+        act_expand.setShortcuts([QKeySequence("Shift+>"), QKeySequence(">")])
+        act_contract = edit_menu.addAction("Contract Mask (-3px)", lambda: self.canvas.erode_mask(3))
+        act_contract.setShortcuts([QKeySequence("Shift+<"), QKeySequence("<")])
 
         # View Menu
         view_menu = menu_bar.addMenu("&View")
         view_menu.addAction("Fit to Screen", self.canvas.fit_to_screen, QKeySequence("Ctrl+0"))
         view_menu.addAction("Actual Size (100%)", self.canvas.reset_zoom, QKeySequence("Ctrl+1"))
-        view_menu.addAction("Zoom In (+25%)", lambda: self.canvas.zoom_by(1.25), QKeySequence("Ctrl++"))
+        act_zoom_in = view_menu.addAction("Zoom In (+25%)", lambda: self.canvas.zoom_by(1.25))
+        act_zoom_in.setShortcuts([QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
         view_menu.addAction("Zoom Out (-20%)", lambda: self.canvas.zoom_by(0.8), QKeySequence("Ctrl+-"))
         view_menu.addSeparator()
         view_menu.addAction("Flip View Horizontal", self.canvas.toggle_flip_horizontal, QKeySequence("H"))
@@ -294,6 +301,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction("Documentation & Shortcuts", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
+        # Single-key Tool Selectors
         QShortcut(QKeySequence("B"), self).activated.connect(lambda: self.set_tool("BRUSH"))
         QShortcut(QKeySequence("E"), self).activated.connect(lambda: self.set_tool("ERASER"))
         QShortcut(QKeySequence("R"), self).activated.connect(lambda: self.set_tool("RECT"))
@@ -302,15 +310,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("G"), self).activated.connect(lambda: self.set_tool("BUCKET"))
         QShortcut(QKeySequence("M"), self).activated.connect(lambda: self.set_tool("NONE"))
         
+        # AI & Detection Operations
         QShortcut(QKeySequence("O"), self).activated.connect(self.on_ocr_scan)
         QShortcut(QKeySequence("T"), self).activated.connect(self.on_transparency_scan)
         QShortcut(QKeySequence("C"), self).activated.connect(self.on_lama_clean)
-        
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.on_undo)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.on_redo)
-        QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(self.on_redo)
-        QShortcut(QKeySequence("Alt+Z"), self).activated.connect(self.on_undo)
-        QShortcut(QKeySequence("Alt+Shift+Z"), self).activated.connect(self.on_redo)
 
         # Dynamic Brush Resize Brackets
         QShortcut(QKeySequence("["), self).activated.connect(lambda: self.adjust_brush_size(-5))
@@ -318,38 +321,13 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Shift+["), self).activated.connect(lambda: self.adjust_brush_size(-20))
         QShortcut(QKeySequence("Shift+]"), self).activated.connect(lambda: self.adjust_brush_size(20))
 
-        # Viewport Navigation & Zoom Presets
-        QShortcut(QKeySequence("Ctrl+0"), self).activated.connect(self.canvas.fit_to_screen)
-        QShortcut(QKeySequence("Ctrl+1"), self).activated.connect(self.canvas.reset_zoom)
-        QShortcut(QKeySequence("Ctrl+="), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
-        QShortcut(QKeySequence("Ctrl++"), self).activated.connect(lambda: self.canvas.zoom_by(1.25))
-        QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(lambda: self.canvas.zoom_by(0.8))
-        QShortcut(QKeySequence("H"), self).activated.connect(self.canvas.toggle_flip_horizontal)
-
-        # Mask Refinement & Selection Operations
-        QShortcut(QKeySequence("Shift+>"), self).activated.connect(lambda: self.canvas.dilate_mask(3))
-        QShortcut(QKeySequence("Shift+."), self).activated.connect(lambda: self.canvas.dilate_mask(3))
-        QShortcut(QKeySequence("Shift+<"), self).activated.connect(lambda: self.canvas.erode_mask(3))
-        QShortcut(QKeySequence("Shift+,"), self).activated.connect(lambda: self.canvas.erode_mask(3))
-        QShortcut(QKeySequence("Ctrl+Shift+I"), self).activated.connect(self.canvas.invert_mask)
-        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self.canvas.clear_mask)
-        QShortcut(QKeySequence("Esc"), self).activated.connect(self.canvas.clear_mask)
-        QShortcut(QKeySequence("Q"), self).activated.connect(self.canvas.toggle_quick_mask)
-        QShortcut(QKeySequence("Ctrl+M"), self).activated.connect(self.canvas.cycle_mask_color)
-
         # Rapid Page Navigation
-        QShortcut(QKeySequence("Page_Down"), self).activated.connect(lambda: self.navigate_file(1))
-        QShortcut(QKeySequence("Page_Up"), self).activated.connect(lambda: self.navigate_file(-1))
+        QShortcut(QKeySequence(Qt.Key_PageDown), self).activated.connect(lambda: self.navigate_file(1))
+        QShortcut(QKeySequence(Qt.Key_PageUp), self).activated.connect(lambda: self.navigate_file(-1))
         QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self.navigate_file(1))
         QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self.navigate_file(-1))
         QShortcut(QKeySequence("Alt+Right"), self).activated.connect(lambda: self.navigate_file(1))
         QShortcut(QKeySequence("Alt+Left"), self).activated.connect(lambda: self.navigate_file(-1))
-
-        # Quick Save, Open & Export
-        QShortcut(QKeySequence("Ctrl+S"), self).activated.connect(self.on_quick_save)
-        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self.on_export)
-        QShortcut(QKeySequence("Ctrl+O"), self).activated.connect(self.on_open_image)
-        QShortcut(QKeySequence("Ctrl+Shift+O"), self).activated.connect(self.on_open_folder)
 
     def adjust_brush_size(self, delta):
         new_size = max(1, min(300, self.canvas.brush_size + delta))
@@ -1059,6 +1037,7 @@ class MainWindow(QMainWindow):
             self.status_dim_lbl.setText(f"{w} × {h} px · {channels}")
 
         self._check_lock_state()
+        self.canvas.setFocus()
 
     def on_export(self, fmt=None):
         if self.canvas.cv_img is None: return
