@@ -10,6 +10,7 @@ from src.utils.history import HistoryManager
 from src.utils.config import Config
 from src.utils.paths import Paths
 from src.utils.logger import logger
+from src.utils.preferences import UserPrefs
 
 
 #/////////////////////////////////#
@@ -39,13 +40,17 @@ class SessionManager:
         self.max_cached_sessions = getattr(Config, "MAX_CACHED_SESSIONS", 15)
 
     def on_open_image(self):
-        p, _ = QFileDialog.getOpenFileName(self.window, "Open Image", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        last_dir = UserPrefs.load("last_dir", "")
+        p, _ = QFileDialog.getOpenFileName(self.window, "Open Image", last_dir, "Images (*.png *.jpg *.jpeg *.webp)")
         if p:
+            UserPrefs.save("last_dir", os.path.dirname(p))
             self.load_single_file(p)
 
     def on_open_folder(self):
-        p = QFileDialog.getExistingDirectory(self.window, "Select Folder")
+        last_dir = UserPrefs.load("last_dir", "")
+        p = QFileDialog.getExistingDirectory(self.window, "Select Folder", last_dir)
         if p:
+            UserPrefs.save("last_dir", p)
             self.load_folder(p)
 
     def load_single_file(self, path: str):
@@ -300,10 +305,13 @@ class SessionManager:
 
     def on_export(self, fmt=None):
         if self.window.canvas.cv_img is None: return
+        last_export_dir = UserPrefs.load("last_export_dir", UserPrefs.load("last_dir", ""))
+        default_dir = os.path.join(last_export_dir, "") if last_export_dir else ""
         path, sel_filter = QFileDialog.getSaveFileName(
-            self.window, "Export Image", "", "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
+            self.window, "Export Image", default_dir, "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
         )
         if path:
+            UserPrefs.save("last_export_dir", os.path.dirname(path))
             ext = os.path.splitext(path)[1].lower().lstrip(".")
             if not ext:
                 ext = "png" if "PNG" in sel_filter else "jpg"

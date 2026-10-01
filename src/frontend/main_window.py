@@ -14,6 +14,7 @@ from src.utils.system_info import SystemMonitor
 from src.utils.history import HistoryManager
 from src.utils.config import Config
 from src.utils.logger import logger
+from src.utils.preferences import UserPrefs
 
 
 #/////////////////////////////////#
@@ -250,15 +251,27 @@ class MainWindow(QMainWindow):
         self.tools.buttons["BUCKET"].setToolTip("Bucket Fill (G)")
         self.tools.buttons["CLEAR"].setToolTip("Clear Mask (Ctrl+D / Esc)")
         
-        self.b_slider = LabeledSlider("BRUSH SIZE", 40, 1, 300, self.canvas.set_brush_size)
+        # Load saved slider preferences
+        saved_brush = UserPrefs.load("brush_size", 40, type=int)
+        saved_opacity = UserPrefs.load("mask_opacity", 60, type=int)
+        saved_tile = UserPrefs.load("tile_size", 2048, type=int)
+
+        self.b_slider = LabeledSlider("BRUSH SIZE", saved_brush, 1, 300, self.canvas.set_brush_size)
         self.b_slider.setToolTip("Brush Size (1-300px) [ / ]")
-        self.o_slider = LabeledSlider("MASK OPACITY", 60, 0, 100, self.canvas.set_mask_opacity, suffix="%")
+        self.o_slider = LabeledSlider("MASK OPACITY", saved_opacity, 0, 100, self.canvas.set_mask_opacity, suffix="%")
         self.o_slider.setToolTip("Mask Opacity (10-100%)")
-        self.t_slider = LabeledSlider("MAX TILE SIZE", 2048, 512, 4096, is_tile=True)
+        self.t_slider = LabeledSlider("MAX TILE SIZE", saved_tile, 512, 4096, is_tile=True)
         self.t_slider.setToolTip("Max Tile Size (512-4096px)")
         
         # Link dynamic canvas size updates to the sidebar slider UI
         self.canvas.brush_size_changed.connect(self.b_slider.slider.setValue)
+        self.canvas.set_brush_size(saved_brush)
+        self.canvas.set_mask_opacity(saved_opacity)
+
+        # Hook slider changes to persist in UserPrefs
+        self.b_slider.slider.valueChanged.connect(lambda v: UserPrefs.save("brush_size", v))
+        self.o_slider.slider.valueChanged.connect(lambda v: UserPrefs.save("mask_opacity", v))
+        self.t_slider.slider.valueChanged.connect(lambda v: UserPrefs.save("tile_size", v * 512))
         
         btn_scan = QPushButton("OCR SCAN [O]")
         btn_scan.setObjectName("ActionBtn")
@@ -303,11 +316,16 @@ class MainWindow(QMainWindow):
         rp_lay.addStretch()
         rp_lay.addWidget(self.progress_bar)
         
-        split.addWidget(self.lp)
-        split.addWidget(self.canvas)
-        split.addWidget(self.rp)
-        split.setSizes([220, 1000, 240])
-        main_lay.addWidget(split, 1)
+        self.split = split
+        self.split.addWidget(self.lp)
+        self.split.addWidget(self.canvas)
+        self.split.addWidget(self.rp)
+        saved_split = UserPrefs.load("splitter_state")
+        if saved_split:
+            self.split.restoreState(saved_split)
+        else:
+            self.split.setSizes([220, 1000, 240])
+        main_lay.addWidget(self.split, 1)
 
         # Enable OS File Drag & Drop
         self.setAcceptDrops(True)
@@ -365,6 +383,14 @@ class MainWindow(QMainWindow):
         # Standard Studio Menu Bar
         self.setup_menu_bar()
         self.canvas.setFocus()
+
+        # Restore window geometry & state
+        saved_geom = UserPrefs.load("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+        saved_state = UserPrefs.load("window_state")
+        if saved_state:
+            self.restoreState(saved_state)
 
     def setup_menu_bar(self):
         menu_bar = self.menuBar()
@@ -603,6 +629,22 @@ class MainWindow(QMainWindow):
             shutdown_pool()
         except Exception as e:
             logger.warning(f"Error during pool shutdown: {e}")
+
+        # Persist user preferences and layout
+        try:
+            UserPrefs.save("geometry", self.saveGeometry())
+            UserPrefs.save("window_state", self.saveState())
+            if hasattr(self, 'split'):
+                UserPrefs.save("splitter_state", self.split.saveState())
+            if hasattr(self, 'b_slider'):
+                UserPrefs.save("brush_size", self.b_slider.slider.value())
+            if hasattr(self, 'o_slider'):
+                UserPrefs.save("mask_opacity", self.o_slider.slider.value())
+            if hasattr(self, 't_slider'):
+                UserPrefs.save("tile_size", self.t_slider.slider.value() * 512)
+            UserPrefs.sync()
+        except Exception as e:
+            logger.warning(f"Error saving user preferences: {e}")
 
         logger.info("--- STUDIO SHUTDOWN COMPLETE ---")
         super().closeEvent(event)
