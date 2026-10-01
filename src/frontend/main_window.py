@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
 from src.frontend.canvas import MangaCanvas
 from src.frontend.help_system import HelpSystem
-from src.frontend.dialogs.batch_setup import BatchSetupDialog
+from src.frontend.dialogs import BatchSetupDialog, ShortcutOverlayDialog
 from src.frontend.controllers import (
     ToolController, SessionManager, PageState, PipelineController, BatchController
 )
@@ -462,7 +462,8 @@ class MainWindow(QMainWindow):
 
         # Help Menu
         help_menu = menu_bar.addMenu("&Help")
-        help_menu.addAction("Documentation & Shortcuts", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
+        help_menu.addAction("Keyboard Shortcuts", self.show_shortcut_overlay, QKeySequence("Ctrl+/"))
+        help_menu.addAction("Documentation & Manual", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
         self.tool_controller.setup_shortcuts()
@@ -470,6 +471,10 @@ class MainWindow(QMainWindow):
     #/////////////////////////////////#
     #    DELEGATES: TOOL CONTROLLER   #
     #/////////////////////////////////#
+
+    def show_shortcut_overlay(self):
+        overlay = ShortcutOverlayDialog(self)
+        overlay.exec()
 
     def adjust_brush_size(self, delta: int):
         self.tool_controller.adjust_brush_size(delta)

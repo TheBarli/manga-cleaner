@@ -50,6 +50,10 @@ class ToolController:
         QShortcut(QKeySequence("Alt+Right"), w).activated.connect(lambda: w.navigate_file(1))
         QShortcut(QKeySequence("Alt+Left"), w).activated.connect(lambda: w.navigate_file(-1))
 
+        # Help & Shortcut Overlays
+        QShortcut(QKeySequence("Ctrl+/"), w).activated.connect(w.show_shortcut_overlay)
+        QShortcut(QKeySequence("?"), w).activated.connect(w.show_shortcut_overlay)
+
     def adjust_brush_size(self, delta: int):
         """Adjusts the brush size on the canvas clamped between 1 and 300px."""
         new_size = max(1, min(300, self.window.canvas.brush_size + delta))
