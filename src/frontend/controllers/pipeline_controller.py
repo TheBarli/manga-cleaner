@@ -259,6 +259,21 @@ class PipelineController:
                 self.window.show_toast("No mask area detected", "warning")
             return
 
+        if not self.window.is_batching:
+            mask_coverage = np.count_nonzero(mask_gray) / mask_gray.size
+            if mask_coverage > 0.30:
+                reply = QMessageBox.question(
+                    self.window,
+                    "Large Mask Warning",
+                    f"The active mask covers {int(mask_coverage * 100)}% of the image.\n"
+                    "Inpainting such a large area may take substantial processing time.\n\n"
+                    "Do you want to proceed with AI cleaning?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+
         self.total_lama_tasks += 1
         t_size = self.window.t_slider.slider.value() * 512
         self.window.mark_current_modified()
