@@ -1,3 +1,4 @@
+import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter,
                              QMenu, QProgressBar, QCheckBox, QMessageBox)
@@ -294,6 +295,19 @@ class MainWindow(QMainWindow):
         self.btn_export.setFixedHeight(34)
         self.btn_export.setToolTip("Export Image (Ctrl+Shift+S)")
         self.btn_export.clicked.connect(self.on_export)
+
+        self.btn_photopea = QPushButton("SEND TO PHOTOPEA")
+        self.btn_photopea.setObjectName("ActionBtn")
+        self.btn_photopea.setFixedHeight(30)
+        self.btn_photopea.setToolTip("Open Original + Cleaned as layers in Photopea (browser)")
+        self.btn_photopea.clicked.connect(self.on_send_to_photopea)
+
+        if os.name == 'nt':
+            self.btn_photoshop = QPushButton("SEND TO PHOTOSHOP")
+            self.btn_photoshop.setObjectName("ActionBtn")
+            self.btn_photoshop.setFixedHeight(30)
+            self.btn_photoshop.setToolTip("Open Original + Cleaned as layers in Adobe Photoshop")
+            self.btn_photoshop.clicked.connect(self.on_send_to_photoshop)
         
         self.queue_lbl = QLabel("Processing / Queued: 0")
         self.queue_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_DIM}; font-size: 10px;")
@@ -312,6 +326,9 @@ class MainWindow(QMainWindow):
         rp_lay.addWidget(self.t_slider)
         rp_lay.addWidget(self.btn_clean)
         rp_lay.addWidget(self.btn_export)
+        rp_lay.addWidget(self.btn_photopea)
+        if os.name == 'nt':
+            rp_lay.addWidget(self.btn_photoshop)
         rp_lay.addWidget(self.queue_lbl)
         rp_lay.addStretch()
         rp_lay.addWidget(self.progress_bar)
@@ -402,6 +419,9 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("Quick Save", self.on_quick_save, QKeySequence("Ctrl+S"))
         file_menu.addAction("Export Image...", self.on_export, QKeySequence("Ctrl+Shift+S"))
+        file_menu.addAction("Send to Photopea", self.on_send_to_photopea)
+        if os.name == 'nt':
+            file_menu.addAction("Send to Photoshop", self.on_send_to_photoshop)
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close, QKeySequence("Ctrl+Q"))
 
@@ -573,6 +593,12 @@ class MainWindow(QMainWindow):
 
     def on_export(self, fmt=None):
         self.session_manager.on_export(fmt)
+
+    def on_send_to_photopea(self):
+        self.session_manager.on_send_to_photopea()
+
+    def on_send_to_photoshop(self):
+        self.session_manager.on_send_to_photoshop()
 
     #/////////////////////////////////#
     #    UI HELPERS & TELEMETRY       #

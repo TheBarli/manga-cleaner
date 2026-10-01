@@ -11,6 +11,7 @@ from src.utils.config import Config
 from src.utils.paths import Paths
 from src.utils.logger import logger
 from src.utils.preferences import UserPrefs
+from src.utils.image_io import safe_imwrite
 
 
 #/////////////////////////////////#
@@ -324,7 +325,48 @@ class SessionManager:
             else:
                 img_out = cv2.cvtColor(self.window.canvas.cv_img, cv2.COLOR_RGB2BGR)
                 
-            is_success, im_buf_arr = cv2.imencode(f".{chosen_fmt}", img_out)
-            if is_success:
-                im_buf_arr.tofile(path)
+            if safe_imwrite(path, img_out):
                 self.window.show_toast(f"Exported: {os.path.basename(path)}", "success")
+            else:
+                self.window.show_toast("Failed to export image", "error")
+
+    def on_send_to_photopea(self):
+        """Transfers original and cleaned image to Photopea in browser as separate layers."""
+        if self.window.canvas.cv_img is None:
+            self.window.show_toast("No active image to send", "warning")
+            return
+
+        cleaned_rgb = self.window.canvas.cv_img
+        original_rgb = self.window.canvas.orig_img if self.window.canvas.orig_img is not None else cleaned_rgb
+        img_path = self.current_img_path
+
+        try:
+            from src.backend.bridges.photopea import PhotopeaBridge
+            res = PhotopeaBridge.send_to_photopea(original_rgb, cleaned_rgb, img_path)
+            if res == "Success":
+                self.window.show_toast("Opening in Photopea...", "success")
+            else:
+                self.window.show_toast(f"Photopea bridge error: {res}", "error")
+        except Exception as e:
+            logger.error(f"Failed to send to Photopea: {e}", exc_info=True)
+            self.window.show_toast(f"Photopea error: {e}", "error")
+
+    def on_send_to_photoshop(self):
+        """Transfers original and cleaned image to Adobe Photoshop via COM."""
+        if self.window.canvas.cv_img is None:
+            self.window.show_toast("No active image to send", "warning")
+            return
+
+        cleaned_rgb = self.window.canvas.cv_img
+        original_rgb = self.window.canvas.orig_img if self.window.canvas.orig_img is not None else cleaned_rgb
+
+        try:
+            from src.backend.bridges.photoshop import PhotoshopBridge
+            res = PhotoshopBridge.send_to_ps(original_rgb, cleaned_rgb)
+            if res == "Success":
+                self.window.show_toast("Transferred to Photoshop", "success")
+            else:
+                self.window.show_toast(f"Photoshop bridge error: {res}", "error")
+        except Exception as e:
+            logger.error(f"Failed to send to Photoshop: {e}", exc_info=True)
+            self.window.show_toast(f"Photoshop error: {e}", "error")
