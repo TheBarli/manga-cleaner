@@ -266,7 +266,11 @@ class SessionManager:
                 self.window.show_toast(f"Corrupted or invalid image: {os.path.basename(path_real)}", "error")
                 logger.error(f"Failed to decode image: {path_real}")
                 
-        # Update status bar dimensions & color mode
+        # Update status bar file name, dimensions & color mode
+        if hasattr(self.window, 'status_file_lbl'):
+            self.window.status_file_lbl.setText(os.path.basename(path_real))
+            self.window.status_file_lbl.setToolTip(path_real)
+
         if hasattr(self.window, 'status_dim_lbl') and self.window.canvas.cv_img is not None:
             h, w = self.window.canvas.cv_img.shape[:2]
             channels = "RGBA" if (len(self.window.canvas.cv_img.shape) == 3 and self.window.canvas.cv_img.shape[2] == 4) else "RGB"

@@ -358,6 +358,10 @@ class MainWindow(QMainWindow):
         self.status_bar = self.statusBar()
         self.status_bar.setFixedHeight(26)
 
+        self.status_file_lbl = QLabel("No file loaded")
+        self.status_file_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_PRIMARY}; font-weight: 600; padding: 0 8px;")
+        self.status_file_lbl.setToolTip("Active image filename")
+
         self.status_tool_lbl = QLabel("Tool: Move")
         self.status_tool_lbl.setStyleSheet(f"color: {Config.COLOR_TEXT_MUTED}; padding: 0 8px;")
 
@@ -392,6 +396,7 @@ class MainWindow(QMainWindow):
         zoom_menu.addAction("200%").triggered.connect(lambda: (self.canvas.reset_zoom(), self.canvas.zoom_by(2.0)))
         self.status_zoom_btn.setMenu(zoom_menu)
 
+        self.status_bar.addWidget(self.status_file_lbl)
         self.status_bar.addWidget(self.status_tool_lbl)
         self.status_bar.addWidget(self.status_history_lbl)
         self.status_bar.addPermanentWidget(self.status_coord_lbl)
