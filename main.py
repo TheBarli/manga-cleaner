@@ -62,13 +62,16 @@ def main():
     icon_path = os.path.join(bundle_dir, "assets", "icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-    qss_path = os.path.join(bundle_dir, "src", "frontend", "styles.qss")
+    from src.utils.preferences import UserPrefs
+    saved_theme = UserPrefs.load("theme", "dark")
+    qss_file = "styles.qss" if saved_theme == "dark" else "styles_light.qss"
+    qss_path = os.path.join(bundle_dir, "src", "frontend", qss_file)
 
     if os.path.exists(qss_path):
         try:
-            with open(qss_path, "r") as f:
+            with open(qss_path, "r", encoding="utf-8") as f:
                 app.setStyleSheet(f.read())
-            logger.info("[+] Stylesheet loaded successfully.")
+            logger.info(f"[+] Stylesheet ({qss_file}) loaded successfully.")
         except Exception as e:
             logger.error(f"Styles Load Failed: {e}")
     else:

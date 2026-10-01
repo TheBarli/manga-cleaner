@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QFrame, QSplitter,
-                             QMenu, QProgressBar, QCheckBox, QMessageBox)
+                             QMenu, QProgressBar, QCheckBox, QMessageBox, QApplication)
 from PySide6.QtGui import QKeySequence
 from PySide6.QtCore import Qt, QTimer
 from src.frontend.widgets import FileListWidget, ToolGroup, LabeledSlider, HardwareMonitor, ToastNotification
@@ -13,6 +13,7 @@ from src.frontend.controllers import (
 )
 from src.utils.system_info import SystemMonitor
 from src.utils.history import HistoryManager
+from src.utils.paths import Paths
 from src.utils.config import Config
 from src.utils.logger import logger
 from src.utils.preferences import UserPrefs
@@ -412,6 +413,14 @@ class MainWindow(QMainWindow):
         # Standard Studio Menu Bar
         self.setup_menu_bar()
         self.update_history_ui()
+
+        # Initialize active theme indicator
+        current_theme = UserPrefs.load("theme", "dark")
+        if current_theme == "light":
+            self.set_theme("light")
+        elif hasattr(self, 'act_theme_dark'):
+            self.act_theme_dark.setChecked(True)
+
         self.canvas.setFocus()
 
         # Restore window geometry & state
@@ -464,6 +473,19 @@ class MainWindow(QMainWindow):
         view_menu.addAction("Flip View Horizontal", self.canvas.toggle_flip_horizontal, QKeySequence("H"))
         view_menu.addAction("Toggle Quick Mask", self.canvas.toggle_quick_mask, QKeySequence("Q"))
         view_menu.addAction("Cycle Mask Color", self.canvas.cycle_mask_color, QKeySequence("Ctrl+M"))
+        view_menu.addSeparator()
+
+        # Theme Submenu
+        theme_menu = view_menu.addMenu("&Theme")
+        self.act_theme_dark = theme_menu.addAction("Dark Theme (Default)")
+        self.act_theme_dark.setCheckable(True)
+        self.act_theme_dark.triggered.connect(lambda: self.set_theme("dark"))
+
+        self.act_theme_light = theme_menu.addAction("Light Theme")
+        self.act_theme_light.setCheckable(True)
+        self.act_theme_light.triggered.connect(lambda: self.set_theme("light"))
+
+        theme_menu.addAction("Toggle Theme", self.toggle_theme, QKeySequence("F6"))
 
         # Help Menu
         help_menu = menu_bar.addMenu("&Help")
@@ -480,6 +502,33 @@ class MainWindow(QMainWindow):
     def show_shortcut_overlay(self):
         overlay = ShortcutOverlayDialog(self)
         overlay.exec()
+
+    def set_theme(self, theme_name: str):
+        theme_name = theme_name.lower()
+        UserPrefs.save("theme", theme_name)
+        
+        if hasattr(self, 'act_theme_dark'):
+            self.act_theme_dark.setChecked(theme_name == "dark")
+        if hasattr(self, 'act_theme_light'):
+            self.act_theme_light.setChecked(theme_name == "light")
+
+        qss_file = "styles.qss" if theme_name == "dark" else "styles_light.qss"
+        qss_path = os.path.join(Paths.BUNDLE_DIR, "src", "frontend", qss_file)
+        if os.path.exists(qss_path):
+            try:
+                with open(qss_path, "r", encoding="utf-8") as f:
+                    qss_content = f.read()
+                app = QApplication.instance()
+                if app:
+                    app.setStyleSheet(qss_content)
+                self.show_toast(f"Theme switched to {theme_name.capitalize()}", "info")
+            except Exception as e:
+                logger.error(f"Failed to apply theme {theme_name}: {e}")
+
+    def toggle_theme(self):
+        curr = UserPrefs.load("theme", "dark")
+        new_theme = "light" if curr == "dark" else "dark"
+        self.set_theme(new_theme)
 
     def adjust_brush_size(self, delta: int):
         self.tool_controller.adjust_brush_size(delta)
