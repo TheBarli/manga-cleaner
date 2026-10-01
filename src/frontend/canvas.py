@@ -2,8 +2,8 @@ import os
 import cv2
 from PySide6.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, 
                              QGraphicsPathItem, QGraphicsEllipseItem, QLabel,
-                             QFrame, QVBoxLayout, QHBoxLayout, QPushButton)
-from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush, QPainterPath, QIcon, QCursor
+                             QFrame, QVBoxLayout, QHBoxLayout, QPushButton, QMenu)
+from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush, QPainterPath, QIcon, QCursor, QKeySequence
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QTimer
 import numpy as np
 from src.utils.paths import Paths
@@ -697,6 +697,115 @@ class MangaCanvas(QGraphicsView):
             self.preview_item.setPath(QPainterPath())
             return
         super().mouseDoubleClickEvent(event)
+
+    def create_context_menu(self) -> QMenu:
+        w = self.window()
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {Config.COLOR_PANEL};
+                color: {Config.COLOR_TEXT};
+                border: 1px solid {Config.COLOR_BORDER_SUBTLE};
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 20px 6px 12px;
+                border-radius: 3px;
+                font-size: 11px;
+            }}
+            QMenu::item:selected {{
+                background-color: {Config.COLOR_ACCENT};
+                color: #ffffff;
+            }}
+            QMenu::item:disabled {{
+                color: {Config.COLOR_TEXT_DIM};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background-color: {Config.COLOR_BORDER_SUBTLE};
+                margin: 4px 8px;
+            }}
+        """)
+
+        has_img = self.cv_img is not None
+        can_undo = hasattr(w, 'history') and w.history.can_undo()
+        can_redo = hasattr(w, 'history') and w.history.can_redo()
+        not_locked = not getattr(self, 'is_locked', False)
+
+        act_undo = menu.addAction("Undo")
+        act_undo.setShortcut(QKeySequence("Ctrl+Z"))
+        act_undo.setEnabled(can_undo and not_locked)
+        if hasattr(w, 'on_undo'):
+            act_undo.triggered.connect(w.on_undo)
+
+        act_redo = menu.addAction("Redo")
+        act_redo.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        act_redo.setEnabled(can_redo and not_locked)
+        if hasattr(w, 'on_redo'):
+            act_redo.triggered.connect(w.on_redo)
+
+        menu.addSeparator()
+
+        act_clear = menu.addAction("Clear Mask")
+        act_clear.setShortcut(QKeySequence("Ctrl+D"))
+        act_clear.setEnabled(has_img and not_locked)
+        act_clear.triggered.connect(self.clear_mask)
+
+        act_invert = menu.addAction("Invert Mask")
+        act_invert.setShortcut(QKeySequence("Ctrl+Shift+I"))
+        act_invert.setEnabled(has_img and not_locked)
+        act_invert.triggered.connect(self.invert_mask)
+
+        act_expand = menu.addAction("Expand Mask (+3px)")
+        act_expand.setShortcut(QKeySequence("Shift+>"))
+        act_expand.setEnabled(has_img and not_locked)
+        act_expand.triggered.connect(lambda: self.dilate_mask(3))
+
+        act_contract = menu.addAction("Contract Mask (-3px)")
+        act_contract.setShortcut(QKeySequence("Shift+<"))
+        act_contract.setEnabled(has_img and not_locked)
+        act_contract.triggered.connect(lambda: self.erode_mask(3))
+
+        menu.addSeparator()
+
+        act_ocr = menu.addAction("OCR Scan")
+        act_ocr.setShortcut(QKeySequence("O"))
+        act_ocr.setEnabled(has_img and not_locked)
+        if hasattr(w, 'on_ocr_scan'):
+            act_ocr.triggered.connect(w.on_ocr_scan)
+
+        act_clean = menu.addAction("Execute Clean")
+        act_clean.setShortcut(QKeySequence("C"))
+        act_clean.setEnabled(has_img and not_locked)
+        if hasattr(w, 'on_lama_clean'):
+            act_clean.triggered.connect(w.on_lama_clean)
+
+        menu.addSeparator()
+
+        act_fit = menu.addAction("Fit to Screen")
+        act_fit.setShortcut(QKeySequence("Ctrl+0"))
+        act_fit.setEnabled(has_img)
+        act_fit.triggered.connect(self.fit_to_screen)
+
+        act_actual = menu.addAction("Actual Size (100%)")
+        act_actual.setShortcut(QKeySequence("Ctrl+1"))
+        act_actual.setEnabled(has_img)
+        act_actual.triggered.connect(self.reset_zoom)
+
+        return menu
+
+    def contextMenuEvent(self, event):
+        # Do not show context menu if in polygon construction (right-click cancels poly) or resizing brush
+        if self.current_tool == "POLY" and self.poly_points:
+            event.accept()
+            return
+        if getattr(self, 'is_resizing_brush', False):
+            event.accept()
+            return
+
+        menu = self.create_context_menu()
+        menu.exec(event.globalPos())
+        event.accept()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
