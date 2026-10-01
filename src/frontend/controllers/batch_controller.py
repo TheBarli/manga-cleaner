@@ -45,7 +45,9 @@ class BatchController:
         if self.window.file_list.count() == 0:
             return
 
-        dialog = BatchSetupDialog(self.window)
+        total_count = self.window.file_list.count()
+        selected_count = sum(1 for i in range(total_count) if self.window.file_list.item(i).checkState() == Qt.Checked)
+        dialog = BatchSetupDialog(self.window, selected_count=selected_count, total_count=total_count)
         if dialog.exec() != QDialog.Accepted:
             return
 
