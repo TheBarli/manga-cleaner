@@ -58,6 +58,9 @@ class SessionManager:
         if not os.path.isfile(path):
             return
 
+        if hasattr(self.window, 'add_recent_item'):
+            self.window.add_recent_item(path)
+
         # Synchronous check if already in file list
         found_idx = -1
         for i in range(self.window.file_list.count()):
@@ -84,6 +87,10 @@ class SessionManager:
     def load_folder(self, folder_path: str):
         if not os.path.isdir(folder_path):
             return
+
+        if hasattr(self.window, 'add_recent_item'):
+            self.window.add_recent_item(folder_path)
+
         valid_exts = ('.jpg', '.jpeg', '.png', '.webp')
         files = [os.path.join(folder_path, f) for f in sorted(os.listdir(folder_path)) if f.lower().endswith(valid_exts)]
         if files:

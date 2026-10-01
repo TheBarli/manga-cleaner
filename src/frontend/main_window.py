@@ -438,6 +438,8 @@ class MainWindow(QMainWindow):
         file_menu = menu_bar.addMenu("&File")
         file_menu.addAction("Open Image...", self.on_open_image, QKeySequence("Ctrl+O"))
         file_menu.addAction("Import Folder...", self.on_open_folder, QKeySequence("Ctrl+Shift+O"))
+        self.recent_menu = file_menu.addMenu("Open &Recent")
+        self.update_recent_menu()
         file_menu.addSeparator()
         file_menu.addAction("Quick Save", self.on_quick_save, QKeySequence("Ctrl+S"))
         file_menu.addAction("Export Image...", self.on_export, QKeySequence("Ctrl+Shift+S"))
@@ -529,6 +531,59 @@ class MainWindow(QMainWindow):
         curr = UserPrefs.load("theme", "dark")
         new_theme = "light" if curr == "dark" else "dark"
         self.set_theme(new_theme)
+
+    def add_recent_item(self, path: str):
+        if not path or not os.path.exists(path):
+            return
+        path = os.path.abspath(path)
+        items = UserPrefs.load("recent_items", [])
+        if not isinstance(items, list):
+            items = []
+        if path in items:
+            items.remove(path)
+        items.insert(0, path)
+        items = items[:10]
+        UserPrefs.save("recent_items", items)
+        self.update_recent_menu()
+
+    def update_recent_menu(self):
+        if not hasattr(self, 'recent_menu'):
+            return
+        self.recent_menu.clear()
+        raw_items = UserPrefs.load("recent_items", [])
+        if not isinstance(raw_items, list):
+            raw_items = []
+
+        valid_items = [p for p in raw_items if os.path.exists(p)]
+
+        if not valid_items:
+            empty_act = self.recent_menu.addAction("No Recent Files")
+            empty_act.setEnabled(False)
+            return
+
+        for path in valid_items:
+            name = os.path.basename(path) or path
+            label = f"[Folder] {name}" if os.path.isdir(path) else name
+            act = self.recent_menu.addAction(label)
+            act.setToolTip(path)
+            act.triggered.connect(lambda checked=False, p=path: self.open_recent_path(p))
+
+        self.recent_menu.addSeparator()
+        clear_act = self.recent_menu.addAction("Clear Recent List")
+        clear_act.triggered.connect(self.clear_recent_items)
+
+    def open_recent_path(self, path: str):
+        if os.path.isdir(path):
+            self.session_manager.load_folder(path)
+        elif os.path.isfile(path):
+            self.session_manager.load_single_file(path)
+        else:
+            self.show_toast(f"Item not found: {path}", "warning")
+            self.update_recent_menu()
+
+    def clear_recent_items(self):
+        UserPrefs.save("recent_items", [])
+        self.update_recent_menu()
 
     def adjust_brush_size(self, delta: int):
         self.tool_controller.adjust_brush_size(delta)
