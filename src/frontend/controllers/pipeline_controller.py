@@ -22,6 +22,8 @@ class PipelineController:
         self.completed_tasks = 0
         self.total_lama_tasks = 0
         self.completed_lama_tasks = 0
+        self._ocr_initialized = False
+        self._lama_initialized = False
 
     def get_locked_paths(self) -> set:
         """Returns set of all file paths currently running or queued in AI pipeline or batch."""
@@ -80,6 +82,8 @@ class PipelineController:
 
     def on_worker_progress(self, val):
         """Calculates fractional progress for smooth overall queue tracking."""
+        if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
+            self.window.progress_bar.setRange(0, 100)
         if self.worker.task != "clean" or self.total_lama_tasks == 0:
             return
         base_progress = (self.completed_lama_tasks / self.total_lama_tasks) * 100
@@ -108,6 +112,22 @@ class PipelineController:
 
         item = self.task_queue.pop(0)
         source_path = item["path"]
+        task = item["task"]
+
+        # First-time model loading progress feedback
+        if task == "ocr" and not self._ocr_initialized:
+            self._ocr_initialized = True
+            self.window.show_toast("Loading OCR detection model into VRAM...", "info", 5000)
+            self.window.canvas.show_hud("Loading OCR Model...", duration=3500)
+            self.window.progress_bar.setRange(0, 0)
+            self.window.progress_bar.setVisible(True)
+        elif task == "clean" and not self._lama_initialized:
+            self._lama_initialized = True
+            self.window.show_toast("Loading LaMa inpainting model into VRAM...", "info", 5000)
+            self.window.canvas.show_hud("Loading LaMa Model...", duration=3500)
+            if not self.window.is_batching:
+                self.window.progress_bar.setRange(0, 0)
+                self.window.progress_bar.setVisible(True)
         
         # Update status to WAITING since AI is processing it now
         self.window.page_states[source_path] = PageState.WAITING
@@ -132,6 +152,8 @@ class PipelineController:
     def stop_thread(self):
         """Terminates active worker thread and restores cursor."""
         self.window.setCursor(Qt.ArrowCursor)
+        if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
+            self.window.progress_bar.setRange(0, 100)
         if self.worker_thread:
             self.worker_thread.quit()
             self.worker_thread.wait()
@@ -162,6 +184,9 @@ class PipelineController:
         new_state = PageState.READY if task == "clean" else PageState.MODIFIED
         self.window.page_states[source_path] = new_state
         self.window.file_list.update_item_state(source_path, new_state.name.lower())
+
+        if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
+            self.window.progress_bar.setRange(0, 100)
 
         if task == "clean":
             self.completed_lama_tasks += 1
