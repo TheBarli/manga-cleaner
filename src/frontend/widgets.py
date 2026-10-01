@@ -2,7 +2,7 @@ import os
 from PySide6.QtWidgets import (QListWidget, QListWidgetItem, QWidget, QVBoxLayout, 
                              QPushButton, QLabel, QFrame, QSlider, QHBoxLayout,
                              QStyledItemDelegate, QGridLayout)
-from PySide6.QtCore import Qt, QRect, QTimer
+from PySide6.QtCore import Qt, QRect, QTimer, QSize
 from PySide6.QtGui import QIcon
 from src.utils.config import Config
 from src.utils.paths import Paths
@@ -97,6 +97,10 @@ class ToolGroup(QFrame):
         
         for i, name in enumerate(button_configs):
             btn = QPushButton(name)
+            icon_file = os.path.join(Paths.BUNDLE_DIR, "assets", f"tool_{name.lower()}.svg")
+            if os.path.exists(icon_file):
+                btn.setIcon(QIcon(icon_file))
+                btn.setIconSize(QSize(14, 14))
             if name in checkable: 
                 btn.setCheckable(True)
                 btn.setAutoExclusive(True) 
