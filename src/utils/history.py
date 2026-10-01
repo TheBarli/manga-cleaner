@@ -50,6 +50,11 @@ class HistoryManager:
     def can_redo(self) -> bool:
         return len(self.redo_stack) > 0
 
+    def clear(self):
+        """Clears both undo and redo stacks."""
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
     def push_mask_state(self, mask_qimage):
         """Pushes a compressed mask snapshot to the unified undo stack before a modification."""
         if mask_qimage is None:
