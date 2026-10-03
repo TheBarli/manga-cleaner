@@ -163,6 +163,11 @@ class BatchController:
 
         if task == "clean":
             final_img = self.window.canvas.cv_img if is_active else self.window.image_sessions[source_path]["img"]
+            if self.batch_engine.export_format.lower() != "none":
+                ext = self.batch_engine.export_format.lower()
+                orig_name = os.path.splitext(os.path.basename(source_path))[0]
+                save_path = os.path.join(self.batch_engine.output_dir, f"{orig_name}_cleaned.{ext}")
+                self.window.session_manager.record_persisted(source_path, save_path)
             is_last = self.batch_engine.save_current(final_img)
             self.window.session_manager._ensure_session_limit()
             if is_last:

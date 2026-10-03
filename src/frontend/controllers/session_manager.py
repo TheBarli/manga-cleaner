@@ -37,8 +37,15 @@ class SessionManager:
         self.window = window
         self.image_sessions = OrderedDict()
         self.page_states = {}
+        self.persisted_paths = {}
         self.current_img_path = None
         self.max_cached_sessions = getattr(Config, "MAX_CACHED_SESSIONS", 15)
+
+    def record_persisted(self, source_path: str, save_path: str):
+        """Records where an image's latest processed pixels were written to disk."""
+        self.persisted_paths[source_path] = save_path
+        if source_path in self.image_sessions:
+            self.image_sessions[source_path]["persisted_path"] = save_path
 
     def on_open_image(self):
         last_dir = UserPrefs.load("last_dir", "")
@@ -99,6 +106,7 @@ class SessionManager:
     def load_files(self, file_paths: list):
         self.image_sessions.clear()
         self.page_states.clear()
+        self.persisted_paths.clear()
         self.window.file_list.clear()
         for full_path in file_paths:
             self.page_states[full_path] = PageState.UNMODIFIED
@@ -186,8 +194,23 @@ class SessionManager:
         self.max_cached_sessions = max(1, limit)
         self._ensure_session_limit()
 
+    def _is_evictable(self, path: str) -> bool:
+        """A session is only safely evictable if its latest state exists intact on disk."""
+        session = self.image_sessions.get(path)
+        if not session:
+            return False
+        state = self.page_states.get(path, PageState.UNMODIFIED)
+        if state == PageState.UNMODIFIED:
+            return True
+        persisted = session.get("persisted_path") or self.persisted_paths.get(path)
+        if state == PageState.READY and persisted and os.path.exists(persisted):
+            return True
+        return False
+
     def _ensure_session_limit(self):
-        """Evicts least recently accessed sessions when exceeding max_cached_sessions (LRU)."""
+        """Evicts least recently accessed sessions when exceeding max_cached_sessions (LRU).
+        Never evicts memory-only processed results or unsaved modifications to prevent data loss.
+        """
         if len(self.image_sessions) <= self.max_cached_sessions:
             return
 
@@ -198,29 +221,21 @@ class SessionManager:
         while len(self.image_sessions) > self.max_cached_sessions:
             evicted = False
 
-            # Pass 1: Prioritize evicting UNMODIFIED or READY sessions in LRU order
+            # Prioritize evicting safely persistable sessions in LRU order
             for path in list(self.image_sessions.keys()):
                 if path == self.current_img_path or path in locked_paths:
                     continue
-                state = self.page_states.get(path, PageState.UNMODIFIED)
-                if state in (PageState.UNMODIFIED, PageState.READY):
+                if self._is_evictable(path):
                     del self.image_sessions[path]
                     evicted = True
-                    logger.debug(f"Evicted clean session from memory cache: {os.path.basename(path)}")
+                    logger.debug(f"Evicted clean/persisted session from memory cache: {os.path.basename(path)}")
                     break
 
-            # Pass 2: If still over limit, evict oldest non-locked session
+            # If no sessions are evictable without data loss, stop evicting and warn
             if not evicted:
-                for path in list(self.image_sessions.keys()):
-                    if path == self.current_img_path or path in locked_paths:
-                        continue
-                    del self.image_sessions[path]
-                    evicted = True
-                    logger.debug(f"Evicted session from memory cache: {os.path.basename(path)}")
-                    break
-
-            # If all sessions are locked or active, do not force evict
-            if not evicted:
+                if len(self.image_sessions) > self.max_cached_sessions:
+                    if hasattr(self.window, "show_toast"):
+                        self.window.show_toast("Memory cache full — export pages to free memory", "warning")
                 break
 
     def on_file_clicked(self, it):
@@ -232,7 +247,8 @@ class SessionManager:
                 "img": self.window.canvas.cv_img.copy(),
                 "orig": getattr(self.window.canvas, 'orig_img', self.window.canvas.cv_img).copy(),
                 "mask": self.window.canvas.mask.copy(),
-                "history": self.window.history
+                "history": self.window.history,
+                "persisted_path": self.persisted_paths.get(self.current_img_path)
             }
             self.image_sessions.move_to_end(self.current_img_path)
             self._ensure_session_limit()
@@ -249,7 +265,10 @@ class SessionManager:
             self.window.canvas.mask = session["mask"].copy()
             self.window.canvas.update_mask_display()
         else:
-            img_data = np.fromfile(path_real, dtype=np.uint8)
+            load_source = self.persisted_paths.get(path_real, path_real)
+            if not os.path.exists(load_source):
+                load_source = path_real
+            img_data = np.fromfile(load_source, dtype=np.uint8)
             img = cv2.imdecode(img_data, cv2.IMREAD_UNCHANGED)
 
             if img is not None:
@@ -257,15 +276,25 @@ class SessionManager:
                 elif len(img.shape) == 3 and img.shape[2] == 4: img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
                 else: img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+                orig_img = img
+                if load_source != path_real and os.path.exists(path_real):
+                    orig_data = np.fromfile(path_real, dtype=np.uint8)
+                    orig_dec = cv2.imdecode(orig_data, cv2.IMREAD_UNCHANGED)
+                    if orig_dec is not None:
+                        if len(orig_dec.shape) == 2: orig_img = cv2.cvtColor(orig_dec, cv2.COLOR_GRAY2RGB)
+                        elif len(orig_dec.shape) == 3 and orig_dec.shape[2] == 4: orig_img = cv2.cvtColor(orig_dec, cv2.COLOR_BGRA2RGBA)
+                        else: orig_img = cv2.cvtColor(orig_dec, cv2.COLOR_BGR2RGB)
+
                 self.window.history = HistoryManager(Config.MAX_HISTORY, on_change=self.window.update_history_ui)
                 self.window.update_history_ui()
-                self.window.canvas.set_image(img, orig_img=img)
+                self.window.canvas.set_image(img, orig_img=orig_img)
                 
                 self.image_sessions[path_real] = {
                     "img": img.copy(),
-                    "orig": img.copy(),
+                    "orig": orig_img.copy(),
                     "mask": self.window.canvas.mask.copy(),
-                    "history": self.window.history
+                    "history": self.window.history,
+                    "persisted_path": self.persisted_paths.get(path_real)
                 }
                 self.image_sessions.move_to_end(path_real)
                 self._ensure_session_limit()
@@ -312,6 +341,7 @@ class SessionManager:
         success, buf = cv2.imencode(ext, img_out)
         if success:
             buf.tofile(out_path)
+            self.record_persisted(self.current_img_path, out_path)
             self.page_states[self.current_img_path] = PageState.READY
             self.window.file_list.update_item_state(self.current_img_path, "ready")
             self.window.show_toast(f"Quick-saved: {filename}", "success")
