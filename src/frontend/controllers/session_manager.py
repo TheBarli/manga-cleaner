@@ -5,7 +5,7 @@ from collections import OrderedDict
 from enum import Enum, auto
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 from src.utils.history import HistoryManager
 from src.utils.config import Config
 from src.utils.paths import Paths
@@ -103,7 +103,22 @@ class SessionManager:
         if files:
             self.load_files(files)
 
+    def has_unsaved_changes(self) -> bool:
+        """Returns True if any active or cached image has unsaved modifications."""
+        return any(state == PageState.MODIFIED for state in self.page_states.values())
+
     def load_files(self, file_paths: list):
+        if not getattr(self.window, "is_batching", False) and self.has_unsaved_changes():
+            res = QMessageBox.question(
+                self.window,
+                "Discard Unsaved Edits?",
+                "You have unsaved edits on one or more pages. Loading new files will discard them. Do you want to proceed?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if res != QMessageBox.Yes:
+                return
+
         self.image_sessions.clear()
         self.page_states.clear()
         self.persisted_paths.clear()
