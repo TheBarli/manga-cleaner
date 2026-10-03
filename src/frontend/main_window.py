@@ -482,7 +482,8 @@ class MainWindow(QMainWindow):
 
         # Help Menu
         help_menu = menu_bar.addMenu("&Help")
-        help_menu.addAction("Keyboard Shortcuts", self.show_shortcut_overlay, QKeySequence("Ctrl+/"))
+        act_shortcuts = help_menu.addAction("Keyboard Shortcuts", self.show_shortcut_overlay)
+        act_shortcuts.setShortcuts([QKeySequence("Ctrl+/"), QKeySequence("?")])
         help_menu.addAction("Documentation & Manual", lambda: HelpSystem.show_guide(self), QKeySequence("F1"))
 
     def setup_shortcuts(self):
