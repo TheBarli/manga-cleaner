@@ -1,12 +1,15 @@
 import unittest
+from tests.test_isolated_base import IsolatedTestCase
 from src.utils.preferences import UserPrefs
 
-class TestUserPrefs(unittest.TestCase):
+class TestUserPrefs(IsolatedTestCase):
     def setUp(self):
+        super().setUp()
         UserPrefs.clear()
 
     def tearDown(self):
         UserPrefs.clear()
+        super().tearDown()
 
     def test_save_load_int(self):
         UserPrefs.save("test_int", 85)

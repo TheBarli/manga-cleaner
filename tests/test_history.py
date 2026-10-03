@@ -82,6 +82,60 @@ class TestHistoryManager(unittest.TestCase):
         mask = QImage(16, 16, QImage.Format_ARGB32)
         self.history.push_mask_state(mask)
         self.assertTrue(self.history.can_undo())
+        self.history.clear()
+        self.assertFalse(self.history.can_undo())
+        self.assertFalse(self.history.can_redo())
+
+    def test_clean_undo_overlapping_tiles_restores_original(self):
+        """Regression test for overlapping-tile undo pixel restoration (R2-03a)."""
+        orig = np.zeros((10, 20, 3), np.uint8)
+        output = orig.copy()
+        history = []
+        # tile A covers x 0..12, tile B covers x 8..20 (overlap 8..12)
+        for (x1, x2, val) in [(0, 12, 100), (8, 20, 200)]:
+            history.append((x1, 0, output[:, x1:x2].copy()))
+            output[:, x1:x2] = val
+        h = HistoryManager(10)
+        h.push_image_clean(history, output)
+        img = output.copy()
+        h.undo(img, None)
+        self.assertTrue(np.array_equal(img, orig))
+        self.assertEqual(len(np.unique(img[:, 8:12])), 1)
+        self.assertEqual(img[0, 10, 0], 0)
+
+    def test_redo_clean_preserves_remaining_redo_stack(self):
+        """Regression test for redo stack retention when redoing an AI clean (R2-03b)."""
+        from src.frontend.canvas import MangaCanvas
+        c = MangaCanvas()
+        hist = HistoryManager(10)
+        c.mask_changed.connect(lambda: hist.push_mask_state(c.mask))
+        base = np.zeros((16, 16, 3), np.uint8)
+        c.set_image(base.copy(), orig_img=base.copy())
+
+        # Step 1: AI clean
+        patches = [(0, 0, base[0:8, 0:8].copy())]
+        res_img = base.copy()
+        res_img[0:8, 0:8] = 255
+        hist.push_image_clean(patches, res_img, saved_mask=c.mask.copy())
+        c.set_image(res_img)
+
+        # Step 2: Mask stroke
+        c.mask_changed.emit()
+        self.assertEqual(len(hist.undo_stack), 2)
+
+        # Undo both operations
+        hist.undo(c.cv_img, c.mask)
+        hist.undo(c.cv_img, c.mask)
+        self.assertEqual(len(hist.redo_stack), 2)
+
+        # Redo the clean using reset_mask (as implemented in PipelineController)
+        r = hist.redo(c.cv_img, c.mask)
+        c.set_image(r["img"])
+        if r.get("clear_mask"):
+            c.reset_mask()
+
+        # Redo stack must still retain the mask stroke action
+        self.assertEqual(len(hist.redo_stack), 1)
 
     def test_on_change_callback(self):
         call_count = 0

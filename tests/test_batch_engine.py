@@ -2,10 +2,12 @@ import unittest
 import os
 import shutil
 import numpy as np
+from tests.test_isolated_base import IsolatedTestCase
 from src.backend.batch_engine import BatchEngine
 
-class TestBatchEngine(unittest.TestCase):
+class TestBatchEngine(IsolatedTestCase):
     def setUp(self):
+        super().setUp()
         self.engine = BatchEngine()
         self.created_dirs = []
 
@@ -16,6 +18,7 @@ class TestBatchEngine(unittest.TestCase):
                     shutil.rmtree(d)
                 except Exception:
                     pass
+        super().tearDown()
 
     def test_batch_lifecycle(self):
         fake_files = [

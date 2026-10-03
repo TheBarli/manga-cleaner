@@ -2,13 +2,10 @@ import unittest
 import os
 import sys
 from PySide6.QtWidgets import QApplication
+from tests.test_isolated_base import IsolatedTestCase
 from src.utils.paths import Paths
 
-class TestStyles(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        Paths.initialize()
-        cls.app = QApplication.instance() or QApplication(sys.argv)
+class TestStyles(IsolatedTestCase):
 
     def test_qss_files_exist_and_contain_selectors(self):
         dark_qss_path = os.path.join(Paths.BASE_DIR, "src", "frontend", "styles.qss")

@@ -1,7 +1,8 @@
 import unittest
+from tests.test_isolated_base import IsolatedTestCase
 from src.utils.config import Config
 
-class TestConfig(unittest.TestCase):
+class TestConfig(IsolatedTestCase):
     def test_batch_id_format(self):
         batch_id = Config.get_next_batch_id()
         self.assertTrue(batch_id.startswith("batch_"))
