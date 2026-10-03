@@ -197,7 +197,6 @@ class PipelineController:
 
             if is_active:
                 self.window.canvas.set_image(result)
-                self.window.canvas.clear_mask()
             else:
                 self.window.image_sessions[source_path]["img"] = result
                 self.window.image_sessions[source_path]["mask"].fill(Qt.transparent)
@@ -316,7 +315,7 @@ class PipelineController:
         elif res.get("type") == "image":
             self.window.canvas.set_image(res["img"])
             if res.get("clear_mask"):
-                self.window.canvas.clear_mask()
+                self.window.canvas.reset_mask()
 
     def on_undo_image(self):
         self.on_undo()

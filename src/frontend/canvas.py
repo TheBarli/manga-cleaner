@@ -1147,6 +1147,16 @@ class MangaCanvas(QGraphicsView):
         if self.mask_item:
             self.mask_item.setOpacity(opacity_percent / 100.0)
 
+    def reset_mask(self):
+        """Programmatically clears mask pixels WITHOUT emitting mask_changed (avoids history push)."""
+        self.poly_points.clear()
+        if hasattr(self, 'preview_item') and self.preview_item:
+            self.preview_item.setPath(QPainterPath())
+        if self.mask:
+            self.mask.fill(Qt.transparent)
+            self.update_mask_display()
+            self.last_drawn_pt = None
+
     def clear_mask(self):
         if self.is_locked: return  # Block clearing if AI is working
         self.poly_points.clear()
