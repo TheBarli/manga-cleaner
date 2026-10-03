@@ -208,7 +208,15 @@ class PipelineController:
 
             h, w = result.shape[:2]
             rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            rgba[result > 0] = [0, 255, 0, 255] if task == "transparency" else [244, 63, 94, 255]
+            if task == "transparency":
+                color_bgra = [0, 255, 0, 255]
+            else:
+                c = getattr(self.window.canvas, 'current_mask_color', None)
+                if c is not None:
+                    color_bgra = [c.blue(), c.green(), c.red(), 255]
+                else:
+                    color_bgra = [94, 63, 244, 255]
+            rgba[result > 0] = color_bgra
             new_mask = QImage(rgba.data, w, h, w * 4, QImage.Format_ARGB32).copy()
 
             if is_active:
