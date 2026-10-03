@@ -3,6 +3,7 @@ import time
 import numpy as np
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from PySide6.QtCore import QObject, Signal, Slot
 from src.backend.processor import ImageProcessor
 from src.utils.logger import logger
@@ -27,6 +28,20 @@ def shutdown_pool():
             logger.warning(f"Error shutting down process pool: {e}")
         finally:
             _pool = None
+
+def reset_pool():
+    """Forces termination of broken or stuck pool and recreates it."""
+    global _pool
+    logger.warning("[!] Resetting background AI ProcessPoolExecutor...")
+    shutdown_pool()
+    return get_pool()
+
+_manager = None
+def get_manager():
+    global _manager
+    if _manager is None:
+        _manager = multiprocessing.Manager()
+    return _manager
 
 # Top-level functions so Windows can send them to the background process
 def _run_ocr_process(cv_img, language):
@@ -57,8 +72,12 @@ class AIWorker(QObject):
         super().__init__()
         self.task = task
         self.args = args
-        self.manager = multiprocessing.Manager()
+        self._cancelled = False
         logger.info(f"[i] AIWorker initialized for task: {self.task}")
+
+    def cancel(self):
+        """Signals active task to cancel as soon as possible."""
+        self._cancelled = True
 
     @Slot()
     def process(self):
@@ -74,12 +93,24 @@ class AIWorker(QObject):
             logger.info("[i] Submitting OCR task to background OS process...")
             future = get_pool().submit(_run_ocr_process, cv_img, language)
             
+            deadline = time.monotonic() + 300
             # Poll the background process without blocking the GUI
             while not future.done():
+                if self._cancelled or time.monotonic() > deadline:
+                    future.cancel()
+                    reset_pool()
+                    msg = "Task cancelled by user" if self._cancelled else "OCR task timed out after 300s"
+                    logger.warning(f"[!] {msg}")
+                    self.error.emit(msg)
+                    return
                 time.sleep(0.05)
                 
             logger.info("[+] OCR background task completed successfully.")
             self.finished.emit(future.result(), None)
+        except BrokenProcessPool as e:
+            logger.error(f"[X] AI process pool crashed during OCR: {e}")
+            reset_pool()
+            self.error.emit("AI Background Process crashed (out of memory or GPU fault). Worker pool restarted.")
         except Exception as e:
             logger.error(f"[X] OCR Task crashed in background process: {e}")
             self.error.emit(str(e))
@@ -87,11 +118,19 @@ class AIWorker(QObject):
     def run_clean(self, cv_img, mask_img, max_tile_w):
         try:
             logger.info("[i] Submitting LaMa Clean task to background OS process...")
-            q = self.manager.Queue()
+            q = get_manager().Queue()
             future = get_pool().submit(_run_clean_process, cv_img, mask_img, max_tile_w, q)
             
+            deadline = time.monotonic() + 300
             # Poll the background process and update UI progress
             while not future.done():
+                if self._cancelled or time.monotonic() > deadline:
+                    future.cancel()
+                    reset_pool()
+                    msg = "Task cancelled by user" if self._cancelled else "LaMa Clean task timed out after 300s"
+                    logger.warning(f"[!] {msg}")
+                    self.error.emit(msg)
+                    return
                 while not q.empty():
                     self.progress.emit(q.get())
                 time.sleep(0.05)
@@ -99,6 +138,10 @@ class AIWorker(QObject):
             logger.info("[+] LaMa Clean background task completed successfully.")
             res = future.result()
             self.finished.emit(res[0], res[1])
+        except BrokenProcessPool as e:
+            logger.error(f"[X] AI process pool crashed during clean: {e}")
+            reset_pool()
+            self.error.emit("AI Background Process crashed (out of memory or GPU fault). Worker pool restarted.")
         except Exception as e:
             logger.error(f"[X] LaMa Clean Task crashed in background process: {e}")
             self.error.emit(str(e))

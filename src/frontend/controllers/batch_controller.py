@@ -193,7 +193,9 @@ class BatchController:
         self.batch_engine.files.clear()
         self.batch_engine.current_index = 0
 
-        # Purge pending pipeline tasks
+        # Purge pending pipeline tasks and stop active worker
+        if self.window.pipeline_controller.worker_thread:
+            self.window.pipeline_controller.stop_thread()
         self.window.pipeline_controller.task_queue.clear()
         self.window.pipeline_controller.total_lama_tasks = 0
         self.window.pipeline_controller.completed_lama_tasks = 0

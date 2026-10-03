@@ -4,6 +4,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QMessageBox
 from src.backend.workers import AIWorker
 from src.frontend.controllers.session_manager import PageState
+from src.utils.logger import logger
 
 
 #/////////////////////////////////#
@@ -154,9 +155,14 @@ class PipelineController:
         self.window.setCursor(Qt.ArrowCursor)
         if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
             self.window.progress_bar.setRange(0, 100)
+        if hasattr(self, 'worker') and self.worker:
+            self.worker.cancel()
         if self.worker_thread:
             self.worker_thread.quit()
-            self.worker_thread.wait()
+            if not self.worker_thread.wait(3000):
+                logger.warning("[!] Worker thread did not terminate within 3s, terminating...")
+                self.worker_thread.terminate()
+                self.worker_thread.wait(1000)
             self.worker_thread = None
         self._update_queue_ui()
 
