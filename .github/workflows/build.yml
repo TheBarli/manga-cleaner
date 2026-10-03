@@ -28,26 +28,26 @@ jobs:
           # 1. Windows GPU
           - target: Windows-GPU
             os: windows-latest
-            spec: MangaCleaner_GPU.spec
+            spec: packaging/windows_gpu.spec
             is_gpu: true
 
           # 2. Windows CPU
           - target: Windows-CPU
             os: windows-latest
-            spec: MangaCleaner_CPU.spec
+            spec: packaging/windows_cpu.spec
             is_gpu: false
 
-          # 3. Windows CPU Clean
-          - target: Windows-CPU-Clean
-            os: windows-latest
-            spec: MangaCleaner_CPU_clean.spec
-            is_gpu: false
-
-          # 4. Linux CPU
+          # 3. Linux CPU
           - target: Linux-CPU
             os: ubuntu-latest
-            spec: MangaCleaner_CPU_linux.spec
+            spec: packaging/linux_cpu.spec
             is_gpu: false
+
+          # 4. Linux GPU
+          - target: Linux-GPU
+            os: ubuntu-latest
+            spec: packaging/linux_gpu.spec
+            is_gpu: true
 
     steps:
       - name: Checkout Code
@@ -76,15 +76,23 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      # --- Dependencies Setup ---
       - name: Install Python Dependencies & PyInstaller
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller==6.18.0
 
+      # --- Run Test Suite ---
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover -s tests -v
+        env:
+          QT_QPA_PLATFORM: offscreen
+
       # --- GPU Wheels (Only for Windows GPU build) ---
       - name: Install CUDA 12 & cuDNN 9 DLL Wheels (GPU Only)
-        if: matrix.is_gpu
+        if: matrix.is_gpu && runner.os == 'Windows'
         run: |
           python -m pip install nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12
 
