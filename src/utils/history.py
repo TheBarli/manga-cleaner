@@ -138,7 +138,7 @@ class HistoryManager:
         elif act_type == "image":
             self.redo_stack.append(action)
             if current_img is not None:
-                for x, y, undo_patch, _ in action["patches"]:
+                for x, y, undo_patch, _ in reversed(action["patches"]):
                     h, w = undo_patch.shape[:2]
                     current_img[y:y+h, x:x+w] = undo_patch
 
