@@ -206,8 +206,9 @@ class PipelineController:
                 if self.completed_lama_tasks < self.total_lama_tasks:
                     self.completed_lama_tasks += 1
                 target_history = self.window.history if is_active else session["history"]
-                saved_mask = self.window.canvas.mask.copy() if is_active else session["mask"].copy()
-                if len(patches) > 0:
+                raw_mask = self.window.canvas.mask if is_active else session.get("mask")
+                saved_mask = raw_mask.copy() if raw_mask is not None else None
+                if len(patches) > 0 and saved_mask is not None:
                     target_history.push_image_clean(patches, result, saved_mask=saved_mask)
 
                 if is_active:
