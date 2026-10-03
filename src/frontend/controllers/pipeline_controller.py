@@ -168,76 +168,85 @@ class PipelineController:
 
     def on_task_error(self, message: str):
         """Handles worker failure, marks error state, and displays crash alert."""
-        source_path = getattr(self.worker, 'source_path', None)
-        if source_path:
-            self.window.page_states[source_path] = PageState.ERROR
-            self.window.file_list.update_item_state(source_path, "error")
+        try:
+            source_path = getattr(self.worker, 'source_path', None)
+            if source_path:
+                self.window.page_states[source_path] = PageState.ERROR
+                self.window.file_list.update_item_state(source_path, "error")
 
-        self.stop_thread()
-        self.window.batch_controller.is_batching = False
-        self.task_queue.clear()
-        self.total_lama_tasks = 0
-        self.completed_lama_tasks = 0
-        self._update_queue_ui()
-        QMessageBox.critical(self.window, "Hardware Error", message)
+            self.window.batch_controller.is_batching = False
+            self.task_queue.clear()
+            self.total_lama_tasks = 0
+            self.completed_lama_tasks = 0
+            QMessageBox.critical(self.window, "Hardware Error", message)
+        finally:
+            self.stop_thread()
+            self._update_queue_ui()
 
     def on_task_finished(self, result, patches):
         """Applies inference results to active canvas or background session."""
-        task = self.worker.task  
-        source_path = getattr(self.worker, 'source_path', self.window.current_img_path)
-        is_active = (source_path == self.window.current_img_path)
+        try:
+            task = self.worker.task if self.worker else "unknown"
+            source_path = getattr(self.worker, 'source_path', self.window.current_img_path)
+            is_active = (source_path == self.window.current_img_path)
 
-        new_state = PageState.READY if task == "clean" else PageState.MODIFIED
-        self.window.page_states[source_path] = new_state
-        self.window.file_list.update_item_state(source_path, new_state.name.lower())
+            session = self.window.image_sessions.get(source_path)
+            if not is_active and session is None:
+                logger.warning(f"[!] Session for {source_path} no longer exists; discarding finished {task} task.")
+                return
 
-        if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
-            self.window.progress_bar.setRange(0, 100)
+            new_state = PageState.READY if task == "clean" else PageState.MODIFIED
+            self.window.page_states[source_path] = new_state
+            self.window.file_list.update_item_state(source_path, new_state.name.lower())
 
-        if task == "clean":
-            self.completed_lama_tasks += 1
-            target_history = self.window.history if is_active else self.window.image_sessions[source_path]["history"]
-            saved_mask = self.window.canvas.mask.copy() if is_active else self.window.image_sessions[source_path]["mask"].copy()
-            if len(patches) > 0:
-                target_history.push_image_clean(patches, result, saved_mask=saved_mask)
+            if hasattr(self.window, 'progress_bar') and self.window.progress_bar.maximum() == 0:
+                self.window.progress_bar.setRange(0, 100)
 
-            if is_active:
-                self.window.canvas.set_image(result)
-            else:
-                self.window.image_sessions[source_path]["img"] = result
-                self.window.image_sessions[source_path]["mask"].fill(Qt.transparent)
+            if task == "clean":
+                self.completed_lama_tasks += 1
+                target_history = self.window.history if is_active else session["history"]
+                saved_mask = self.window.canvas.mask.copy() if is_active else session["mask"].copy()
+                if len(patches) > 0:
+                    target_history.push_image_clean(patches, result, saved_mask=saved_mask)
 
-        elif task in ["ocr", "transparency"]:
-            target_history = self.window.history if is_active else self.window.image_sessions[source_path]["history"]
-            current_mask = self.window.canvas.mask if is_active else self.window.image_sessions[source_path]["mask"]
-            target_history.push_mask_state(current_mask)
-
-            h, w = result.shape[:2]
-            rgba = np.zeros((h, w, 4), dtype=np.uint8)
-            if task == "transparency":
-                color_bgra = [0, 255, 0, 255]
-            else:
-                c = getattr(self.window.canvas, 'current_mask_color', None)
-                if c is not None:
-                    color_bgra = [c.blue(), c.green(), c.red(), 255]
+                if is_active:
+                    self.window.canvas.set_image(result)
                 else:
-                    color_bgra = [94, 63, 244, 255]
-            rgba[result > 0] = color_bgra
-            new_mask = QImage(rgba.data, w, h, w * 4, QImage.Format_ARGB32).copy()
+                    session["img"] = result
+                    session["mask"].fill(Qt.transparent)
 
-            if is_active:
-                self.window.canvas.mask = new_mask
-                self.window.canvas.update_mask_display()
-            else:
-                self.window.image_sessions[source_path]["mask"] = new_mask
+            elif task in ["ocr", "transparency"]:
+                target_history = self.window.history if is_active else session["history"]
+                current_mask = self.window.canvas.mask if is_active else session["mask"]
+                target_history.push_mask_state(current_mask)
 
-        self.stop_thread()
+                h, w = result.shape[:2]
+                rgba = np.zeros((h, w, 4), dtype=np.uint8)
+                if task == "transparency":
+                    color_bgra = [0, 255, 0, 255]
+                else:
+                    c = getattr(self.window.canvas, 'current_mask_color', None)
+                    if c is not None:
+                        color_bgra = [c.blue(), c.green(), c.red(), 255]
+                    else:
+                        color_bgra = [94, 63, 244, 255]
+                rgba[result > 0] = color_bgra
+                new_mask = QImage(rgba.data, w, h, w * 4, QImage.Format_ARGB32).copy()
 
-        # Handle Background Batching Loop
-        if self.window.is_batching:
-            self.window.batch_controller.handle_task_finished(task, source_path, is_active)
+                if is_active:
+                    self.window.canvas.mask = new_mask
+                    self.window.canvas.update_mask_display()
+                else:
+                    session["mask"] = new_mask
 
-        self._process_queue()
+            # Handle Background Batching Loop
+            if self.window.is_batching:
+                self.window.batch_controller.handle_task_finished(task, source_path, is_active)
+        except Exception as e:
+            logger.error(f"[X] Unexpected error applying task result for {source_path}: {e}", exc_info=True)
+        finally:
+            self.stop_thread()
+            self._process_queue()
 
     def on_ocr_scan(self):
         """Triggers text detection inference on the active canvas."""

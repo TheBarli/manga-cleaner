@@ -161,8 +161,12 @@ class BatchController:
         if not self.is_batching:
             return
 
+        session = self.window.image_sessions.get(source_path)
+        if not is_active and session is None:
+            return
+
         if task == "clean":
-            final_img = self.window.canvas.cv_img if is_active else self.window.image_sessions[source_path]["img"]
+            final_img = self.window.canvas.cv_img if is_active else session["img"]
             if self.batch_engine.export_format.lower() != "none":
                 ext = self.batch_engine.export_format.lower()
                 orig_name = os.path.splitext(os.path.basename(source_path))[0]
@@ -175,8 +179,8 @@ class BatchController:
             else:
                 self.step_batch()
         elif task in ["ocr", "transparency"]:
-            mask_q = self.window.canvas.mask if is_active else self.window.image_sessions[source_path]["mask"]
-            img_cv = self.window.canvas.cv_img if is_active else self.window.image_sessions[source_path]["img"]
+            mask_q = self.window.canvas.mask if is_active else session["mask"]
+            img_cv = self.window.canvas.cv_img if is_active else session["img"]
 
             ptr = mask_q.bits()
             mask_np = np.frombuffer(ptr, np.uint8).reshape((mask_q.height(), mask_q.width(), 4))
