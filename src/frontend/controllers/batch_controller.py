@@ -143,7 +143,14 @@ class BatchController:
                     self.window.file_list.update_item_state(path, "ready")
                     self.window.pipeline_controller._update_queue_ui()
                     
+                    if self.batch_engine.export_format.lower() != "none":
+                        ext = self.batch_engine.export_format.lower()
+                        orig_name = os.path.splitext(os.path.basename(path))[0]
+                        save_path = os.path.join(self.batch_engine.output_dir, f"{orig_name}_cleaned.{ext}")
+                        self.window.session_manager.record_persisted(path, save_path)
+
                     is_last = self.batch_engine.save_current(img_cv)
+                    self.window.session_manager._ensure_session_limit()
                     if is_last:
                         self.finalize_batch()
                     else:
@@ -185,6 +192,25 @@ class BatchController:
             ptr = mask_q.bits()
             mask_np = np.frombuffer(ptr, np.uint8).reshape((mask_q.height(), mask_q.width(), 4))
             mask_gray = mask_np[:, :, 3].copy()
+
+            if not np.any(mask_gray):
+                self.window.pipeline_controller.total_lama_tasks -= 1
+                self.window.page_states[source_path] = PageState.READY
+                self.window.file_list.update_item_state(source_path, "ready")
+                self.window.pipeline_controller._update_queue_ui()
+                if self.batch_engine.export_format.lower() != "none":
+                    ext = self.batch_engine.export_format.lower()
+                    orig_name = os.path.splitext(os.path.basename(source_path))[0]
+                    save_path = os.path.join(self.batch_engine.output_dir, f"{orig_name}_cleaned.{ext}")
+                    self.window.session_manager.record_persisted(source_path, save_path)
+                is_last = self.batch_engine.save_current(img_cv)
+                self.window.session_manager._ensure_session_limit()
+                if is_last:
+                    self.finalize_batch()
+                else:
+                    self.step_batch()
+                return
+
             t_size = self.window.t_slider.slider.value() * 512
             self.window.pipeline_controller.enqueue_task("clean", source_path, img_cv.copy(), mask_gray, t_size)
 

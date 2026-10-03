@@ -67,7 +67,7 @@ class PipelineController:
 
     def _update_queue_ui(self):
         """Updates the status label, global progress bar, and active lock states."""
-        pending = self.total_lama_tasks - self.completed_lama_tasks
+        pending = max(0, self.total_lama_tasks - self.completed_lama_tasks)
         self.window.queue_lbl.setText(f"Processing / Queued: {pending}")
 
         if pending > 0 and self.total_lama_tasks > 0:
@@ -203,7 +203,8 @@ class PipelineController:
                 self.window.progress_bar.setRange(0, 100)
 
             if task == "clean":
-                self.completed_lama_tasks += 1
+                if self.completed_lama_tasks < self.total_lama_tasks:
+                    self.completed_lama_tasks += 1
                 target_history = self.window.history if is_active else session["history"]
                 saved_mask = self.window.canvas.mask.copy() if is_active else session["mask"].copy()
                 if len(patches) > 0:
